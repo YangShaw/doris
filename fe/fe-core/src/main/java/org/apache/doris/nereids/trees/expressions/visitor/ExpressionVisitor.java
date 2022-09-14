@@ -59,6 +59,7 @@ import org.apache.doris.nereids.trees.expressions.SubqueryExpr;
 import org.apache.doris.nereids.trees.expressions.Subtract;
 import org.apache.doris.nereids.trees.expressions.TimestampArithmetic;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
+import org.apache.doris.nereids.trees.expressions.WithClause;
 import org.apache.doris.nereids.trees.expressions.functions.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.literal.BigIntLiteral;
@@ -287,6 +288,10 @@ public abstract class ExpressionVisitor<R, C> {
 
     public R visitSubqueryExpr(SubqueryExpr subqueryExpr, C context) {
         return visit(subqueryExpr, context);
+    }
+
+    public R visitWithClause(WithClause withClause, C context) {
+        return visit(withClause, context);
     }
 
     public R visitTimestampArithmetic(TimestampArithmetic arithmetic, C context) {
