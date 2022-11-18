@@ -39,16 +39,16 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
     List<Expression> partitionSpec;
     List<OrderKey> orderSpec;
 
-    public LogicalWindow(PlanType type, CHILD_TYPE child) {
-        super(type, child);
+
+    public LogicalWindow(List<Window> windowExpressions, List<Expression> partitionSpec, List<OrderKey> orderSpec, CHILD_TYPE child) {
+        super(PlanType.LOGICAL_WINDOW, child);
+        this.windowExpressions = windowExpressions;
+        this.partitionSpec = partitionSpec;
+        this.orderSpec = orderSpec;
     }
 
-    public LogicalWindow(PlanType type, Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
-        super(type, logicalProperties, child);
-    }
-
-    public LogicalWindow(PlanType type, Optional<GroupExpression> groupExpression, Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
-        super(type, groupExpression, logicalProperties, child);
+    public LogicalWindow(Optional<GroupExpression> groupExpression, Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
+        super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
     }
 
     @Override

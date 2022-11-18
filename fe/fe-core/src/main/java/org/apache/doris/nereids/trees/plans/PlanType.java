@@ -25,6 +25,7 @@ public enum PlanType {
 
     // logical plan
     LOGICAL_CTE,
+    LOGICAL_WINDOW,
     LOGICAL_SUBQUERY_ALIAS,
     LOGICAL_UNBOUND_ONE_ROW_RELATION,
     LOGICAL_EMPTY_RELATION,

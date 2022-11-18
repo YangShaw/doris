@@ -1520,7 +1520,7 @@ public class SelectStmt extends QueryStmt {
      */
     private void createAnalyticInfo(Analyzer analyzer) throws AnalysisException {
         // collect AnalyticExprs from the SELECT and ORDER BY clauses
-            ArrayList<Expr> analyticExprs = Lists.newArrayList();
+        ArrayList<Expr> analyticExprs = Lists.newArrayList();
         TreeNode.collect(resultExprs, AnalyticExpr.class, analyticExprs);
         if (sortInfo != null) {
             TreeNode.collect(sortInfo.getOrderingExprs(), AnalyticExpr.class, analyticExprs);
