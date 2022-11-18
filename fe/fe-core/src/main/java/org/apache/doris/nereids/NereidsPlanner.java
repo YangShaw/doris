@@ -180,7 +180,9 @@ public class NereidsPlanner extends Planner {
             // cost-based optimize and explore plan space
             optimize();
 
-            PhysicalPlan physicalPlan = chooseBestPlan(getRoot(), requireProperties);
+            PhysicalPlan physicalPlan = chooseBestPlan(getRoot(), PhysicalProperties.ANY);
+            System.out.println("optimize------------------------");
+            System.out.println(physicalPlan.treeString());
 
             // post-process physical plan out of memo, just for future use.
             physicalPlan = postProcess(physicalPlan);

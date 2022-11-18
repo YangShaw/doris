@@ -182,6 +182,10 @@ limitClause
     | (LIMIT offset=INTEGER_VALUE COMMA limit=INTEGER_VALUE)
     ;
 
+partitionClause
+    : PARTITION BY expression (COMMA expression)*
+    ;
+
 joinType
     : INNER?
     | CROSS
@@ -311,7 +315,8 @@ primaryExpression
     | ASTERISK                                                                                 #star
     | qualifiedName DOT ASTERISK                                                               #star
     | functionIdentifier LEFT_PAREN ((DISTINCT|ALL)? arguments+=expression
-      (COMMA arguments+=expression)* (ORDER BY sortItem (COMMA sortItem)*)?)? RIGHT_PAREN      #functionCall
+      (COMMA arguments+=expression)* (ORDER BY sortItem (COMMA sortItem)*)?)? RIGHT_PAREN
+      (OVER windowSpec)?                                                                        #functionCall
     | LEFT_PAREN query RIGHT_PAREN                                                             #subqueryExpression
     | ATSIGN identifier                                                                        #userVariable
     | DOUBLEATSIGN (kind=(GLOBAL | SESSION) DOT)? identifier                                     #systemVariable
@@ -322,9 +327,36 @@ primaryExpression
       source=valueExpression RIGHT_PAREN                                                       #extract
     ;
 
+<<<<<<< HEAD
 functionIdentifier
     : identifier
     | LEFT | RIGHT
+=======
+windowSpec
+    : name=identifier
+    | LEFT_PAREN name=identifier RIGHT_PAREN
+    | LEFT_PAREN
+        partitionClause?
+        sortClause?
+        windowFrame?
+        RIGHT_PAREN
+    ;
+
+windowFrame
+    : frameUnits start=frameBound
+    | frameUnits BETWEEN start=frameBound AND end=frameBound
+    ;
+
+frameUnits
+    : ROWS
+    | RANGE
+    ;
+
+frameBound
+    : UNBOUNDED boundType=(PRECEDING | FOLLOWING)
+    | boundType=CURRENT ROW
+    | expression boundType=(PRECEDING | FOLLOWING)
+>>>>>>> 6ccfcbf62 (window function parse & datastructures)
     ;
 
 qualifiedName

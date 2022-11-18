@@ -107,6 +107,16 @@ public class NereidsParserTest extends ParserTestBase {
     }
 
     @Test
+    public void testParseWindowFunctions() {
+        NereidsParser nereidsParser = new NereidsParser();
+        LogicalPlan logicalPlan;
+
+        String windowSql1 = "select rank() over(partition by k1 order by k1) as ranking from t1";
+        logicalPlan = nereidsParser.parseSingle(windowSql1);
+        System.out.println(logicalPlan.treeString());
+    }
+
+    @Test
     public void testExplainNormal() {
         String sql = "explain select `AD``D` from t1 where a = 1";
         NereidsParser nereidsParser = new NereidsParser();

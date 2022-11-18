@@ -41,6 +41,7 @@ import org.apache.doris.nereids.DorisParser.DecimalLiteralContext;
 import org.apache.doris.nereids.DorisParser.DereferenceContext;
 import org.apache.doris.nereids.DorisParser.ExistContext;
 import org.apache.doris.nereids.DorisParser.ExplainContext;
+import org.apache.doris.nereids.DorisParser.FrameBoundContext;
 import org.apache.doris.nereids.DorisParser.FromClauseContext;
 import org.apache.doris.nereids.DorisParser.GroupingElementContext;
 import org.apache.doris.nereids.DorisParser.GroupingSetContext;
@@ -98,6 +99,8 @@ import org.apache.doris.nereids.DorisParser.TypeConstructorContext;
 import org.apache.doris.nereids.DorisParser.UnitIdentifierContext;
 import org.apache.doris.nereids.DorisParser.UserVariableContext;
 import org.apache.doris.nereids.DorisParser.WhereClauseContext;
+import org.apache.doris.nereids.DorisParser.WindowFrameContext;
+import org.apache.doris.nereids.DorisParser.WindowSpecContext;
 import org.apache.doris.nereids.DorisParserBaseVisitor;
 import org.apache.doris.nereids.StatementContext;
 import org.apache.doris.nereids.analyzer.UnboundAlias;
@@ -170,6 +173,12 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.WeeksSub;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.YearsAdd;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.YearsDiff;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.YearsSub;
+import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.WindowSpec;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.expressions.literal.BigIntLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.DateLiteral;
@@ -245,6 +254,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * Build a logical plan tree with unbounded nodes.
@@ -340,13 +351,12 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
     public LogicalSubQueryAlias<Plan> visitAliasQuery(AliasQueryContext ctx) {
         return ParserUtils.withOrigin(ctx, () -> {
             LogicalPlan queryPlan = plan(ctx.query());
-            List<String> columnNames = null;
-            if (ctx.columnAliases() != null) {
-                columnNames = ctx.columnAliases().identifier().stream()
+            Optional<List<String>> columnNames = optionalVisit(ctx.columnAliases(), () ->
+                    ctx.columnAliases().identifier().stream()
                     .map(RuleContext::getText)
-                    .collect(ImmutableList.toImmutableList());
-            }
-            return new LogicalSubQueryAlias<>(ctx.identifier().getText(), Optional.ofNullable(columnNames), queryPlan);
+                    .collect(ImmutableList.toImmutableList())
+            );
+            return new LogicalSubQueryAlias(ctx.identifier().getText(), columnNames, queryPlan);
         });
     }
 
@@ -948,10 +958,89 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                     return new Count();
                 }
                 throw new ParseException("'*' can only be used in conjunction with COUNT: " + functionName, ctx);
-            } else {
-                return new UnboundFunction(functionName, isDistinct, params);
             }
+            UnboundFunction function = new UnboundFunction(functionName, isDistinct, params);
+
+            if (ctx.windowSpec() != null) {
+                return new Window(function, withWindowSpec(ctx.windowSpec()));
+            }
+            return function;
         });
+    }
+
+    /**
+     * deal with window function definition
+     */
+    public WindowSpec withWindowSpec(WindowSpecContext ctx) {
+        Optional<List<Expression>> partitionKeys = Optional.ofNullable(ctx.partitionClause())
+                .map(a -> Optional.of(visit(a.expression(), Expression.class)))
+                .orElse(Optional.empty());
+
+        Optional<List<OrderKey>> orderKeys = Optional.ofNullable(ctx.sortClause())
+                .map(a -> Optional.of(visit(a.sortItem(), OrderKey.class)))
+                .orElse(Optional.empty());
+
+        Optional<WindowFrame> windowFrame = optionalVisit(ctx.windowFrame(),
+                () -> withWindowFrame(ctx.windowFrame()));
+
+        return new WindowSpec(partitionKeys, orderKeys, windowFrame);
+    }
+
+    /**
+     * deal with optional expressions
+     */
+    private <T, C> Optional optionalVisit(T ctx, Supplier<C> func) {
+        return Optional.ofNullable(ctx).map(a -> Optional.of(func.get()))
+                .orElse(Optional.empty());
+    }
+
+    /**
+     * deal with window frame
+     */
+    public WindowFrame withWindowFrame(WindowFrameContext ctx) {
+        FrameUnitsType frameUnitsType = FrameUnitsType.valueOf(ctx.frameUnits().getText());
+
+        FrameBoundary leftBoundary = withFrameBound(ctx.start);
+        if (ctx.end != null) {
+            FrameBoundary rightBoundary = withFrameBound(ctx.end);
+            return new WindowFrame(frameUnitsType, leftBoundary, rightBoundary);
+        }
+        return new WindowFrame(frameUnitsType, leftBoundary);
+    }
+
+    private FrameBoundary withFrameBound(FrameBoundContext ctx) {
+        Optional<Expression> expression = Optional.empty();
+        if (ctx.expression() != null) {
+            expression = Optional.of(getExpression(ctx.expression()));
+            // todo: use isConstant() to resolve Function in expression; currently we only
+            //  support literal expression
+            if (!expression.get().isLiteral()) {
+                throw new ParseException("Unsupported expression in WindowFrame : " + expression, ctx);
+            }
+        }
+
+        FrameBoundType frameBoundType = null;
+        switch (ctx.boundType.getType()) {
+            case DorisParser.PRECEDING:
+                if (ctx.UNBOUNDED() != null) {
+                    frameBoundType = FrameBoundType.UNBOUNDED_PRECEDING;
+                } else {
+                    frameBoundType = FrameBoundType.PRECEDING;
+                }
+                break;
+            case DorisParser.CURRENT:
+                frameBoundType = FrameBoundType.CURRENT_ROW;
+                break;
+            case DorisParser.FOLLOWING:
+                if (ctx.UNBOUNDED() != null) {
+                    frameBoundType = FrameBoundType.UNBOUNDED_FOLLOWING;
+                } else {
+                    frameBoundType = FrameBoundType.FOLLOWING;
+                }
+                break;
+            default:
+        }
+        return new FrameBoundary(frameBoundType, expression);
     }
 
     @Override
