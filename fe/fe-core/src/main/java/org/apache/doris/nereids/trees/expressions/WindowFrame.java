@@ -45,27 +45,20 @@ public class WindowFrame {
         this.rightBoundary = rightBoundary;
     }
 
-    /**
-     * if windowFrame's rightBoundary, we should complete it
-     */
-    public void resolveFrameBoundary(WindowFrame windowFrame) {
-        if (windowFrame.rightBoundary != null) {
-            return;
-        }
+    public FrameBoundary getLeftBoundary() {
+        return leftBoundary;
+    }
 
-        /**
-         * "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
-         */
-        if (windowFrame.leftBoundary.getFrameBoundType().isFollowing()) {
-            throw new AnalysisException("");
-        }
+    public void setLeftBoundary(FrameBoundary leftBoundary) {
+        this.leftBoundary = leftBoundary;
+    }
 
-        /**
-         * "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
-         * "over( rows|range [UNBOUNDED] PRECEDING)"
-         *      equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
-         */
-        windowFrame.rightBoundary = new FrameBoundary(FrameBoundType.CURRENT_ROW, Optional.empty());
+    public FrameBoundary getRightBoundary() {
+        return rightBoundary;
+    }
+
+    public void setRightBoundary(FrameBoundary rightBoundary) {
+        this.rightBoundary = rightBoundary;
     }
 
     // confirm that leftBoundary <= rightBoundary

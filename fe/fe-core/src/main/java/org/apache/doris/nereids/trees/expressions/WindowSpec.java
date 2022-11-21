@@ -51,4 +51,8 @@ public class WindowSpec {
     public Optional<WindowFrame> getWindowFrame() {
         return windowFrame;
     }
+
+    public void setWindowFrame(WindowFrame windowFrame) {
+        this.windowFrame = Optional.of(windowFrame);
+    }
 }

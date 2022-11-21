@@ -20,6 +20,7 @@ package org.apache.doris.nereids.rules.analysis;
 import com.google.common.collect.Lists;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.doris.nereids.analyzer.UnboundAlias;
+import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
@@ -27,6 +28,9 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
@@ -34,6 +38,7 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class ResolveWindowFunction extends OneAnalysisRuleFactory {
@@ -43,6 +48,7 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
         return RuleType.RESOLVE_WINDOW_FUNCTION.build(
             logicalProject().thenApply(ctx -> {
                 LogicalProject<GroupPlan> logicalProject = ctx.root;
+
                 List<NamedExpression> projects = logicalProject.getProjects();
                 List<Window> windowList = projects.stream().filter(project -> {
                     if (project instanceof UnboundAlias && project.child(0) instanceof Window) {
@@ -51,13 +57,13 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
                     return false;
                 }).map(project -> (Window) project.child(0)).collect(Collectors.toList());
 
-                return null;
+                return init(windowList, logicalProject);
             })
         );
     }
 
     /**
-     * 核心目标：创建逻辑节点，来维护窗口函数相关的信息。窗口函数对排序有要求，因此也需要增加Sort相关的算子；
+     * 目标：创建逻辑节点，来维护窗口函数相关的信息。窗口函数对排序有要求，因此也需要增加Sort相关的算子；
      * 为了避免重复排序（分区字段也相当于排序），需要对不同窗口函数的信息进行分析，合并同类项。
      *
      * 标准化部分
@@ -78,13 +84,19 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
      *  main procedure
      * @param windowList all collected window functions
      */
-    private void init(List<Window> windowList, LogicalPlan root) {
+    private LogicalWindow init(List<Window> windowList, LogicalPlan root) {
 
         // todo: rewriteSmap? 只处理特定的几个函数（ntile）
 
         // create AnalyticInfo
 
         // 对于包含AnalyticInfo的selectStmt，生成相应的处理窗口的算子
+
+        // check windowFrame
+        windowList.stream().forEach(window -> checkWindowFrame(window));
+
+        // 删掉LogicalProject中的window expr，或在后续的rewrite中消除
+
 
         // 创建windowGroup
         List<WindowFrameGroup> windowFrameGroupList = createCommonWindowFrameGroups(windowList);
@@ -101,7 +113,62 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
                 newRoot = createLogicalPlanNodeForWindowFunctions(newRoot, orderKeyGroup);
             }
         }
+        return (LogicalWindow) newRoot;
     }
+
+
+    /* ********************************************************************************************
+     * WindowFrame check and standardization
+     * ******************************************************************************************** */
+
+    /**
+     * Window frame 补全和检查逻辑：
+     *
+     * 无window frame：
+     * - rank类，up - cr
+     * - 聚合类，up - uf
+     * -
+     */
+
+
+    private void checkWindowFrame(Window window) {
+        if (!window.getWindowSpec().getWindowFrame().isPresent()) {
+            // todo: 根据不同聚合函数来定义不同的frame
+            WindowFrame windowFrame = new WindowFrame(FrameUnitsType.ROWS,
+                    FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
+            window.getWindowSpec().setWindowFrame(windowFrame);
+        }
+
+        window.getWindowSpec().getWindowFrame().ifPresent(windowFrame -> resolveFrameBoundary(windowFrame));
+    }
+
+    /**
+     * if windowFrame's rightBoundary, we should complete it
+     */
+    private void resolveFrameBoundary(WindowFrame windowFrame) {
+        if (windowFrame.getRightBoundary() != null) {
+            return;
+        }
+
+        /**
+         * "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
+         */
+        if (windowFrame.getLeftBoundary().getFrameBoundType().isFollowing()) {
+            throw new AnalysisException("");
+        }
+
+        /**
+         * "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
+         * "over( rows|range [UNBOUNDED] PRECEDING)"
+         *      equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
+         */
+        windowFrame.setRightBoundary(new FrameBoundary(FrameBoundType.CURRENT_ROW, Optional.empty()));
+    }
+
+
+    /* ********************************************************************************************
+     * create LogicalWindow and LogicalSort
+     * ******************************************************************************************** */
 
     private LogicalPlan createLogicalPlanNodeForWindowFunctions(LogicalPlan root, OrderKeyGroup orderKeyGroup) {
         LogicalPlan newRoot;
@@ -117,8 +184,6 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
     }
 
     private LogicalPlan createLogicalSortNode(LogicalPlan root, OrderKeyGroup orderKeyGroup) {
-
-        // 创建Sort算子
         // all keys that need to be sorted, which includes BOTH partitionKeys and orderKeys from this group
         List<OrderKey> keysNeedToBeSortedList = Lists.newArrayList();
         if (!orderKeyGroup.partitionKeyList.isEmpty()) {
@@ -149,6 +214,10 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
         return logicalWindow;
     }
 
+
+    /* ********************************************************************************************
+     * WindowFunctionRelatedGroups
+     * ******************************************************************************************** */
 
     // todo: can we simplify the following three algorithms?
     private List<WindowFrameGroup> createCommonWindowFrameGroups(List<Window> windowList) {
@@ -227,7 +296,7 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
             // maybe OrElse(null)?
             partitionKeyList = window.getWindowSpec().getPartitionKeyList().orElse(Lists.newArrayList());
             orderKeyList = window.getWindowSpec().getOrderKeyList().orElse(Lists.newArrayList());
-            windowFrame = window.getWindowSpec().getWindowFrame().get();
+            windowFrame = window.getWindowSpec().getWindowFrame().orElse(null);
 
             groupList.add(window);
         }
@@ -242,7 +311,6 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
             WindowFrame otherWindowFrame = window.getWindowSpec().getWindowFrame().orElse(null);
 
             // this function is absolutely equals to Expr.equalSets()
-            // 本身需要有空判断
             if (CollectionUtils.isEqualCollection(partitionKeyList, otherPartitionKeyList)
                 && orderKeyList.equals(otherOrderKeyList)) {
                 if ((windowFrame == null && otherWindowFrame == null) || windowFrame.equals(otherWindowFrame)) {

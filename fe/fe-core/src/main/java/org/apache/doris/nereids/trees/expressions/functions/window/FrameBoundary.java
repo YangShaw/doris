@@ -30,9 +30,26 @@ public class FrameBoundary {
 
     private Optional<Expression> boundValue;
 
+    public FrameBoundary(FrameBoundType frameBoundType) {
+        this.frameBoundType = frameBoundType;
+        this.boundValue = Optional.empty();
+    }
+
     public FrameBoundary(FrameBoundType frameBoundType, Optional<Expression> boundValue) {
         this.frameBoundType = frameBoundType;
         this.boundValue = boundValue;
+    }
+
+    public static FrameBoundary newPrecedingBoundary() {
+        return new FrameBoundary(FrameBoundType.UNBOUNDED_PRECEDING);
+    }
+
+    public static FrameBoundary newFollowingBoundary() {
+        return new FrameBoundary(FrameBoundType.UNBOUNDED_FOLLOWING);
+    }
+
+    public static FrameBoundary newCurrentRowBoundary() {
+        return new FrameBoundary(FrameBoundType.CURRENT_ROW);
     }
 
     public FrameBoundType getFrameBoundType() {
