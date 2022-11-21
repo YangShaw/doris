@@ -58,6 +58,7 @@ public enum PlanType {
     GROUP_PLAN,
 
     // physical plan
+    PHYSICAL_WINDOW,
     PHYSICAL_EMPTY_RELATION,
     PHYSICAL_ONE_ROW_RELATION,
     PHYSICAL_OLAP_SCAN,

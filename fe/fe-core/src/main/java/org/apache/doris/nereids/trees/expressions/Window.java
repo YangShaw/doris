@@ -41,4 +41,14 @@ public class Window extends Expression implements PropagateNullable {
     public WindowSpec getWindowSpec() {
         return windowSpec;
     }
+
+    @Override
+    public String toSql() {
+        return windowFunction.toSql() + " OVER(" + windowSpec.toSql() + ")";
+    }
+
+    @Override
+    public String toString() {
+        return windowFunction + " " + windowSpec;
+    }
 }

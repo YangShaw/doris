@@ -17,17 +17,14 @@
 
 package org.apache.doris.nereids.trees.expressions;
 
-import org.apache.doris.nereids.exceptions.AnalysisException;
-import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
+import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
-
-import java.util.Optional;
 
 /**
  * window frame
  */
-public class WindowFrame {
+public class WindowFrame extends Expression implements PropagateNullable {
 
     private FrameUnitsType frameUnits;
 
@@ -60,12 +57,35 @@ public class WindowFrame {
     public void setRightBoundary(FrameBoundary rightBoundary) {
         this.rightBoundary = rightBoundary;
     }
-
     // confirm that leftBoundary <= rightBoundary
     // check1()
 
     // confirm that offset of boundary > 0
     // check2()
 
+    @Override
+    public String toSql() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(frameUnits + " ");
+        if (rightBoundary != null) {
+            sb.append("BETWEEN " + leftBoundary + " AND " + rightBoundary);
+        } else {
+            sb.append(leftBoundary);
+        }
+        return sb.toString();
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("WindowFrame(");
+        sb.append(frameUnits + ", ");
+        sb.append(leftBoundary + ", ");
+        if (rightBoundary != null) {
+            sb.append(rightBoundary);
+        }
+        sb.append(")");
+        return sb.toString();
+    }
 
 }

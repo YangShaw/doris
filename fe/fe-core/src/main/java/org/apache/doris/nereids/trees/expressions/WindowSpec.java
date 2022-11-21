@@ -18,14 +18,16 @@
 package org.apache.doris.nereids.trees.expressions;
 
 import org.apache.doris.nereids.properties.OrderKey;
+import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * window spec
  */
-public class WindowSpec {
+public class WindowSpec extends Expression implements PropagateNullable {
 
     private Optional<List<Expression>> partitionKeyList;
 
@@ -54,5 +56,41 @@ public class WindowSpec {
 
     public void setWindowFrame(WindowFrame windowFrame) {
         this.windowFrame = Optional.of(windowFrame);
+    }
+
+    @Override
+    public String toSql() {
+        StringBuilder sb = new StringBuilder();
+        partitionKeyList.ifPresent(pkList -> sb.append("PARTITION BY ")
+                .append(pkList.stream()
+                .map(Expression::toSql)
+                .collect(Collectors.joining(", ", "", " "))));
+
+        orderKeyList.ifPresent(okList -> sb.append("ORDER BY ")
+                .append(okList.stream()
+                .map(OrderKey::toSql)
+                .collect(Collectors.joining(", ", "", " "))));
+
+        windowFrame.ifPresent(wf -> sb.append(wf.toSql()));
+        // if windowFrame is not present, maybe an unused space ", " would be in the end of stringBuilder
+        return sb.toString().trim();
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("WindowSpec(");
+
+        partitionKeyList.ifPresent(pkList -> sb.append(pkList.stream()
+                .map(Expression::toString)
+                .collect(Collectors.joining(", ", "", ", "))));
+
+        orderKeyList.ifPresent(okList -> sb.append(okList.stream()
+                .map(OrderKey::toString)
+                .collect(Collectors.joining(", ", "", ", "))));
+
+        windowFrame.ifPresent(wf -> sb.append(wf));
+        String string = sb.toString();
+        return string.endsWith(", ") ? string.substring(0, string.length() - 1) : string;
     }
 }

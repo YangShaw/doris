@@ -17,8 +17,6 @@
 
 package org.apache.doris.nereids.rules.analysis;
 
-import com.google.common.collect.Lists;
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.doris.nereids.analyzer.UnboundAlias;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.properties.OrderKey;
@@ -37,10 +35,30 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 
+import com.google.common.collect.Lists;
+import org.apache.commons.collections.CollectionUtils;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * 目标：创建逻辑节点，来维护窗口函数相关的信息。窗口函数对排序有要求，因此也需要增加Sort相关的算子；
+ * 为了避免重复排序（分区字段也相当于排序），需要对不同窗口函数的信息进行分析，合并同类项。
+ *
+ * 标准化部分
+ * 1 对每一个Window做检查：根据函数类型检查order、frame；检查函数类型是否支持；
+ * 2 补充窗口，进行标准化，不同的窗口函数有不同的标准化规则（不确定要在几步中进行）
+ *
+ * 合并同类项部分
+ * *1 计算三种Group:
+ *      WindowFrameGroup:分区、排序、窗口都相同
+ *      OrderKeyGroup: 分区、排序相同
+ *      PartitionKeyGroup: 分区相同
+ * *2 在PartitionGroup中查找SortGroup
+ * *3 对于每个SortGroup，生成LogicalSort算子；
+ * *4 对于SortGroup中的每个WindowGroup，生成LogicalWindow算子；
+ */
 public class ResolveWindowFunction extends OneAnalysisRuleFactory {
 
     @Override
@@ -63,24 +81,6 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
     }
 
     /**
-     * 目标：创建逻辑节点，来维护窗口函数相关的信息。窗口函数对排序有要求，因此也需要增加Sort相关的算子；
-     * 为了避免重复排序（分区字段也相当于排序），需要对不同窗口函数的信息进行分析，合并同类项。
-     *
-     * 标准化部分
-     * 1 对每一个Window做检查
-     * 2 补充窗口，进行标准化，不同的窗口函数有不同的标准化规则（不确定要在几步中进行）
-     *
-     * 合并同类项部分
-     * *1 计算三种Group:
-     *      WindowFrameGroup:分区、排序、窗口都相同
-     *      OrderKeyGroup: 分区、排序相同
-     *      PartitionKeyGroup: 分区相同
-     * *2 在PartitionGroup中查找SortGroup
-     * *3 对于每个SortGroup，生成LogicalSort算子；
-     * *4 对于SortGroup中的每个WindowGroup，生成LogicalWindow算子；
-     */
-
-    /**
      *  main procedure
      * @param windowList all collected window functions
      */
@@ -96,7 +96,6 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
         windowList.stream().forEach(window -> checkWindowFrame(window));
 
         // 删掉LogicalProject中的window expr，或在后续的rewrite中消除
-
 
         // 创建windowGroup
         List<WindowFrameGroup> windowFrameGroupList = createCommonWindowFrameGroups(windowList);
@@ -116,7 +115,6 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
         return (LogicalWindow) newRoot;
     }
 
-
     /* ********************************************************************************************
      * WindowFrame check and standardization
      * ******************************************************************************************** */
@@ -129,8 +127,6 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
      * - 聚合类，up - uf
      * -
      */
-
-
     private void checkWindowFrame(Window window) {
         if (!window.getWindowSpec().getWindowFrame().isPresent()) {
             // todo: 根据不同聚合函数来定义不同的frame
@@ -150,21 +146,16 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
             return;
         }
 
-        /**
-         * "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
-         */
+        // "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
         if (windowFrame.getLeftBoundary().getFrameBoundType().isFollowing()) {
             throw new AnalysisException("");
         }
 
-        /**
-         * "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
-         * "over( rows|range [UNBOUNDED] PRECEDING)"
-         *      equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
-         */
+        // "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
+        // "over( rows|range [UNBOUNDED] PRECEDING)"
+        //   equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
         windowFrame.setRightBoundary(new FrameBoundary(FrameBoundType.CURRENT_ROW, Optional.empty()));
     }
-
 
     /* ********************************************************************************************
      * create LogicalWindow and LogicalSort
@@ -202,18 +193,17 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
             LogicalSort logicalSort = new LogicalSort(keysNeedToBeSortedList, root);
             return logicalSort;
 
-            // todo: check if this group contains the sorting requirements caused by partitionKeys;
-            //  if not, this sorting is consistent with the sorting processing logic caused by the normal order by clause
+            // todo: check if this group contains the sorting requirements caused by partitionKeys; if not,
+            //  this sorting is consistent with the sorting processing logic caused by the normal order by clause
         }
         return root;
     }
 
     private LogicalWindow createLogicalWindow(LogicalPlan root, WindowFrameGroup windowFrameGroup) {
         LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup.groupList,
-            windowFrameGroup.partitionKeyList, windowFrameGroup.orderKeyList, root);
+                windowFrameGroup.partitionKeyList, windowFrameGroup.orderKeyList, root);
         return logicalWindow;
     }
-
 
     /* ********************************************************************************************
      * WindowFunctionRelatedGroups
@@ -278,8 +268,6 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
         return partitionKeyGroupList;
     }
 
-
-
     /**
      * Window Functions that have common PartitionKeys, OrderKeys and WindowFrame
      */
@@ -312,7 +300,7 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
 
             // this function is absolutely equals to Expr.equalSets()
             if (CollectionUtils.isEqualCollection(partitionKeyList, otherPartitionKeyList)
-                && orderKeyList.equals(otherOrderKeyList)) {
+                    && orderKeyList.equals(otherOrderKeyList)) {
                 if ((windowFrame == null && otherWindowFrame == null) || windowFrame.equals(otherWindowFrame)) {
                     return true;
                 }
@@ -359,7 +347,7 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
         }
     }
 
-    private static abstract class WindowFunctionRelatedGroup<G> {
+    private abstract static class WindowFunctionRelatedGroup<G> {
 
         List<G> groupList = Lists.newArrayList();
 

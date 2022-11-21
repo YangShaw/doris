@@ -67,4 +67,13 @@ public class FrameBoundary {
     public void setBoundValue(Optional<Expression> boundValue) {
         this.boundValue = boundValue;
     }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        boundValue.ifPresent(value -> sb.append(value + " "));
+        sb.append(frameBoundType);
+
+        return sb.toString();
+    }
 }

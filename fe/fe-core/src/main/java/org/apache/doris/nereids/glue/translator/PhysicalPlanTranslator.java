@@ -88,6 +88,7 @@ import org.apache.doris.nereids.trees.plans.physical.PhysicalStorageLayerAggrega
 import org.apache.doris.nereids.trees.plans.physical.PhysicalTVFRelation;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalTopN;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalUnion;
+import org.apache.doris.nereids.trees.plans.physical.PhysicalWindow;
 import org.apache.doris.nereids.trees.plans.visitor.DefaultPlanVisitor;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.util.ExpressionUtils;
@@ -606,6 +607,12 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // exchangeNode.limit/offset will be set in when translating  PhysicalLimit
         exchangeNode.setMergeInfo(sortNode.getSortInfo());
         return mergeFragment;
+    }
+
+    @Override
+    public PlanFragment visitPhysicalWindow(PhysicalWindow<? extends Plan> window, PlanTranslatorContext context) {
+
+        return null;
     }
 
     @Override

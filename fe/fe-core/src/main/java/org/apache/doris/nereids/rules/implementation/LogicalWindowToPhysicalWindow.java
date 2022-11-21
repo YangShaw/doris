@@ -15,27 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.doris.nereids.trees.expressions.functions.window;
+package org.apache.doris.nereids.rules.implementation;
+
+import org.apache.doris.nereids.rules.Rule;
+import org.apache.doris.nereids.rules.RuleType;
+import org.apache.doris.nereids.trees.plans.physical.PhysicalWindow;
 
 /**
- * frame bound types
+ * Implementation rule that convert logical window to physical window.
  */
-public enum FrameBoundType {
+public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory {
 
-    UNBOUNDED_PRECEDING("UNBOUNDED_PRECEDING"),
-    UNBOUNDED_FOLLOWING("UNBOUNDED_FOLLOWING"),
-    CURRENT_ROW("CURRENT_ROW"),
-    PRECEDING("PRECEDING"),
-    FOLLOWING("FOLLOWING");
-
-    private final String description;
-
-    FrameBoundType(String description) {
-        this.description = description;
+    @Override
+    public Rule build() {
+        return logicalWindow().then(window -> new PhysicalWindow<>(null, null))
+            .toRule(RuleType.LOGICAL_WINDOW_TO_PHYSICAL_WINDOW_RULE);
     }
-
-    public boolean isFollowing() {
-        return this.equals(UNBOUNDED_FOLLOWING) || this.equals(FOLLOWING);
-    }
-
 }

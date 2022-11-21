@@ -15,41 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.doris.nereids.trees.plans.logical;
+package org.apache.doris.nereids.trees.plans.physical;
 
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
-import org.apache.doris.nereids.properties.OrderKey;
+import org.apache.doris.nereids.properties.PhysicalProperties;
 import org.apache.doris.nereids.trees.expressions.Expression;
-import org.apache.doris.nereids.trees.expressions.Slot;
-import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
+import org.apache.doris.statistics.StatsDeriveResult;
 
 import java.util.List;
 import java.util.Optional;
 
 /**
- * logical node to deal with window functions
+ * physical node for window function
  */
-public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_TYPE> {
+public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD_TYPE> {
 
-    List<Window> windowExpressions;
-    List<Expression> partitionSpec;
-    List<OrderKey> orderSpec;
-
-    public LogicalWindow(List<Window> windowExpressions, List<Expression> partitionSpec,
-                         List<OrderKey> orderSpec, CHILD_TYPE child) {
-        super(PlanType.LOGICAL_WINDOW, child);
-        this.windowExpressions = windowExpressions;
-        this.partitionSpec = partitionSpec;
-        this.orderSpec = orderSpec;
-    }
-
-    public LogicalWindow(Optional<GroupExpression> groupExpression,
-                         Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
-        super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
+    public PhysicalWindow(LogicalProperties logicalProperties, CHILD_TYPE child) {
+        super(PlanType.PHYSICAL_WINDOW, logicalProperties, child);
     }
 
     @Override
@@ -78,7 +64,8 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
     }
 
     @Override
-    public List<Slot> computeOutput() {
+    public PhysicalPlan withPhysicalPropertiesAndStats(PhysicalProperties physicalProperties,
+                                                       StatsDeriveResult statsDeriveResult) {
         return null;
     }
 }
