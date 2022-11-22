@@ -56,9 +56,13 @@ public class AnalyticNodeTest extends TestWithFeService {
     @Test
     public void testAnalyze() {
         String sql = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name) FROM supplier";
+        PlanChecker.from(connectContext).checkPlannerResult(sql);
+    }
 
-        String sql2 = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name ROWS BETWEEN 1 preceding AND current row) FROM supplier";
-        PlanChecker.from(connectContext).checkPlannerResult(sql2);
+    @Test
+    public void testToString() {
+        String sql = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name ROWS BETWEEN 1 preceding AND current row) FROM supplier";
+        PlanChecker.from(connectContext).checkPlannerResult(sql);
     }
 
     @Test
