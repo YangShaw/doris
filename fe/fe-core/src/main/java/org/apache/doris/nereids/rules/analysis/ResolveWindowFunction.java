@@ -75,6 +75,9 @@ public class ResolveWindowFunction extends OneAnalysisRuleFactory {
                     return false;
                 }).map(project -> (Window) project.child(0)).collect(Collectors.toList());
 
+                if (windowList.isEmpty()) {
+                    return logicalProject;
+                }
                 return init(windowList, logicalProject);
             })
         );
