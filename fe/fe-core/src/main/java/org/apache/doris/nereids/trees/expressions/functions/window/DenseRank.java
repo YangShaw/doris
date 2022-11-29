@@ -24,23 +24,11 @@ import org.apache.doris.nereids.types.DataType;
 
 import java.util.List;
 
-/**
- * Window function: Lead()
- */
-public class Lead extends WindowFunction {
+public class DenseRank extends WindowFunction {
 
-    public Lead(String name, Expression... arguments) {
+
+    public DenseRank(String name, Expression... arguments) {
         super(name, arguments);
-    }
-
-    @Override
-    public boolean nullable() {
-        return false;
-    }
-
-    @Override
-    public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
-        return visitor.visitLead(this, context);
     }
 
     @Override
@@ -51,5 +39,15 @@ public class Lead extends WindowFunction {
     @Override
     public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments, List<FunctionSignature> signatures) {
         return null;
+    }
+
+    @Override
+    public boolean nullable() {
+        return false;
+    }
+
+    @Override
+    public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
+        return visitor.visitDenseRank(this, context);
     }
 }

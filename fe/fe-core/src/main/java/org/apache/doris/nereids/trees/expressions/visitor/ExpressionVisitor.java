@@ -79,6 +79,13 @@ import org.apache.doris.nereids.trees.expressions.functions.generator.TableGener
 import org.apache.doris.nereids.trees.expressions.functions.scalar.GroupingScalarFunction;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ScalarFunction;
 import org.apache.doris.nereids.trees.expressions.functions.table.TableValuedFunction;
+import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
+import org.apache.doris.nereids.trees.expressions.functions.window.FirstValue;
+import org.apache.doris.nereids.trees.expressions.functions.window.Lag;
+import org.apache.doris.nereids.trees.expressions.functions.window.LastValue;
+import org.apache.doris.nereids.trees.expressions.functions.window.Lead;
+import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
+import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
 import org.apache.doris.nereids.trees.expressions.literal.ArrayLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.BigIntLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
@@ -430,4 +437,37 @@ public abstract class ExpressionVisitor<R, C>
     public R visitUnboundStar(UnboundStar unboundStar, C context) {
         return visitNamedExpression(unboundStar, context);
     }
+
+    /* ********************************************************************************************
+     * Window functions
+     * ********************************************************************************************/
+
+    public R visitDenseRank(DenseRank denseRank, C context) {
+        return visit(denseRank, context);
+    }
+
+    public R visitFirstValue(FirstValue firstValue, C context) {
+        return visit(firstValue, context);
+    }
+
+    public R visitLag(Lag lag, C context) {
+        return visit(lag, context);
+    }
+
+    public R visitLastValue(LastValue lastValue, C context) {
+        return visit(lastValue, context);
+    }
+
+    public R visitLead(Lead lead, C context) {
+        return visit(lead, context);
+    }
+
+    public R visitRank(Rank rank, C context) {
+        return visit(rank, context);
+    }
+
+    public R visitRowNumber(RowNumber rowNumber, C context) {
+        return visit(rowNumber, context);
+    }
+
 }
