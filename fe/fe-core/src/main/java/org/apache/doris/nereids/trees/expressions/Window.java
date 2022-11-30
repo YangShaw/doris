@@ -19,11 +19,14 @@ package org.apache.doris.nereids.trees.expressions;
 
 import com.google.common.base.Preconditions;
 import org.apache.doris.nereids.analyzer.UnboundFunction;
+import org.apache.doris.nereids.exceptions.UnboundException;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.functions.agg.Max;
 import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
 import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
+import org.apache.doris.nereids.types.BooleanType;
+import org.apache.doris.nereids.types.DataType;
 
 import java.util.List;
 
@@ -40,17 +43,18 @@ public class Window extends Expression implements PropagateNullable {
 
     public Window(UnboundFunction windowFunction, WindowSpec windowSpec) {
         super(windowFunction);
-        this.windowFunction = windowFunction;
+//        this.windowFunction = windowFunction;
         this.windowSpec = windowSpec;
     }
 
     public Window(BoundFunction boundFunction, WindowSpec windowSpec) {
+        super(boundFunction);
         this.boundWindowFunction = boundFunction;
         this.windowSpec = windowSpec;
     }
 
-    public UnboundFunction getWindowFunction() {
-        return (UnboundFunction) child(0);
+    public Expression getWindowFunction() {
+        return child(0);
 //        return windowFunction;
     }
 
@@ -64,17 +68,22 @@ public class Window extends Expression implements PropagateNullable {
 
     @Override
     public String toSql() {
-        return windowFunction.toSql() + " OVER(" + windowSpec.toSql() + ")";
+        return getWindowFunction().toSql() + " OVER(" + windowSpec.toSql() + ")";
     }
 
     @Override
     public String toString() {
-        return windowFunction + " " + windowSpec;
+        return getWindowFunction() + " " + windowSpec;
     }
 
     @Override
     public Window withChildren(List<Expression> children) {
         Preconditions.checkArgument(children.size() == 1);
         return new Window((BoundFunction) children.get(0), windowSpec);
+    }
+
+    @Override
+    public DataType getDataType() throws UnboundException {
+        return child(0).getDataType();
     }
 }

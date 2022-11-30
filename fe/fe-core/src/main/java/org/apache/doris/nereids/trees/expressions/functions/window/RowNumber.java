@@ -18,11 +18,15 @@
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
 import org.apache.doris.nereids.trees.expressions.functions.agg.Max;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
+import org.apache.doris.nereids.types.IntegerType;
+import org.apache.doris.nereids.types.coercion.AbstractDataType;
 
 import java.util.List;
 
@@ -42,6 +46,17 @@ public class RowNumber extends WindowFunction {
         return null;
     }
 
+    // todo: add a class like emptySignature for window function
+    @Override
+    protected FunctionSignature computeSignature(FunctionSignature signature, List<Expression> arguments) {
+        return null;
+    }
+
+    @Override
+    public List<AbstractDataType> expectedInputTypes() {
+        return ImmutableList.of();
+    }
+
     @Override
     public boolean nullable() {
         return false;
@@ -50,6 +65,11 @@ public class RowNumber extends WindowFunction {
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitRowNumber(this, context);
+    }
+
+    @Override
+    public DataType getDataType() {
+        return IntegerType.INSTANCE;
     }
 
 }
