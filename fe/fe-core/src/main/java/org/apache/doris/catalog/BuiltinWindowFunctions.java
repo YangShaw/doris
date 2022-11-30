@@ -17,10 +17,15 @@
 
 package org.apache.doris.catalog;
 
+import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
+import org.apache.doris.nereids.trees.expressions.functions.window.FirstValue;
+import org.apache.doris.nereids.trees.expressions.functions.window.Lag;
+import org.apache.doris.nereids.trees.expressions.functions.window.LastValue;
 import org.apache.doris.nereids.trees.expressions.functions.window.Lead;
 import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
 
 /**
  * Builtin aggregate functions.
@@ -31,8 +36,13 @@ import com.google.common.collect.ImmutableList;
 public class BuiltinWindowFunctions implements FunctionHelper {
 
     public final ImmutableList<WindowFunc> windowFunctions = ImmutableList.of(
+            window(DenseRank.class, "dense_rank"),
+            window(FirstValue.class, "first_value"),
+            window(Lag.class, "lag"),
+            window(LastValue.class, "last_value"),
+            window(Lead.class, "lead"),
             window(Rank.class, "rank"),
-            window(Lead.class, "lead"
+            window(RowNumber.class, "row_number")
     );
 
     public static final BuiltinWindowFunctions INSTANCE = new BuiltinWindowFunctions();

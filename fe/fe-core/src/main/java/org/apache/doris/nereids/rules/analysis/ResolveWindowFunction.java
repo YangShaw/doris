@@ -170,13 +170,14 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
     private LogicalWindow init(List<Window> windowList, LogicalPlan root) {
 
         // todo: rewriteSmap? 只处理特定的几个函数（ntile）
+        windowList.stream().forEach(window -> new WindowFunctionChecker(window).check());
 
         // create AnalyticInfo
 
         // 对于包含AnalyticInfo的selectStmt，生成相应的处理窗口的算子
 
         // check windowFrame
-        windowList.stream().forEach(window -> checkWindowFrame(window));
+        // windowList.stream().forEach(window -> checkWindowFrame(window));
 
         // 删掉LogicalProject中的window expr，或在后续的rewrite中消除
 

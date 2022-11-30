@@ -24,6 +24,7 @@ import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.analysis.AdjustAggregateNullableForEmptySet;
 import org.apache.doris.nereids.rules.analysis.CheckAfterRewrite;
 import org.apache.doris.nereids.rules.analysis.LogicalSubQueryAliasToLogicalProject;
+import org.apache.doris.nereids.rules.analysis.ResolveWindowFunction;
 import org.apache.doris.nereids.rules.expression.rewrite.ExpressionNormalization;
 import org.apache.doris.nereids.rules.expression.rewrite.ExpressionOptimization;
 import org.apache.doris.nereids.rules.expression.rewrite.ExpressionRewrite;
@@ -108,6 +109,10 @@ public class NereidsRewriteJobExecutor extends BatchRulesJob {
                 .add(topDownBatch(ImmutableList.of(new EliminateFilter())))
                 .add(topDownBatch(ImmutableList.of(new PruneOlapScanPartition())))
                 .add(topDownBatch(ImmutableList.of(new CountDistinctRewrite())))
+                .add(topDownBatch(ImmutableList.of(new SelectMaterializedIndexWithAggregate())))
+                .add(topDownBatch(ImmutableList.of(new SelectMaterializedIndexWithoutAggregate())))
+                .add(topDownBatch(ImmutableList.of(new PruneOlapScanTablet())))
+                .add(topDownBatch(ImmutableList.of(new ResolveWindowFunction())))
                 // we need to execute this rule at the end of rewrite
                 // to avoid two consecutive same project appear when we do optimization.
                 .add(topDownBatch(ImmutableList.of(new EliminateOrderByConstant())))

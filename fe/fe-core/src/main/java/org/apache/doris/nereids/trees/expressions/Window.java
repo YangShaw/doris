@@ -17,8 +17,15 @@
 
 package org.apache.doris.nereids.trees.expressions;
 
+import com.google.common.base.Preconditions;
 import org.apache.doris.nereids.analyzer.UnboundFunction;
+import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
+import org.apache.doris.nereids.trees.expressions.functions.agg.Max;
+import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
+import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
+
+import java.util.List;
 
 /**
  * represents window function
@@ -27,15 +34,28 @@ public class Window extends Expression implements PropagateNullable {
 
     private UnboundFunction windowFunction;
 
+    private BoundFunction boundWindowFunction;
+
     private WindowSpec windowSpec;
 
     public Window(UnboundFunction windowFunction, WindowSpec windowSpec) {
+        super(windowFunction);
         this.windowFunction = windowFunction;
         this.windowSpec = windowSpec;
     }
 
+    public Window(BoundFunction boundFunction, WindowSpec windowSpec) {
+        this.boundWindowFunction = boundFunction;
+        this.windowSpec = windowSpec;
+    }
+
     public UnboundFunction getWindowFunction() {
-        return windowFunction;
+        return (UnboundFunction) child(0);
+//        return windowFunction;
+    }
+
+    public void setBoundWindowFunction(BoundFunction boundFunction) {
+        this.boundWindowFunction = boundFunction;
     }
 
     public WindowSpec getWindowSpec() {
@@ -50,5 +70,11 @@ public class Window extends Expression implements PropagateNullable {
     @Override
     public String toString() {
         return windowFunction + " " + windowSpec;
+    }
+
+    @Override
+    public Window withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() == 1);
+        return new Window((BoundFunction) children.get(0), windowSpec);
     }
 }

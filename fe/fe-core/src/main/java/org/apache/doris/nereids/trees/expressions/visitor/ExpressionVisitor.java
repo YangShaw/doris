@@ -73,19 +73,14 @@ import org.apache.doris.nereids.trees.expressions.UnaryOperator;
 import org.apache.doris.nereids.trees.expressions.VariableDesc;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
+import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.functions.generator.TableGeneratingFunction;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.GroupingScalarFunction;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ScalarFunction;
 import org.apache.doris.nereids.trees.expressions.functions.table.TableValuedFunction;
-import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
-import org.apache.doris.nereids.trees.expressions.functions.window.FirstValue;
-import org.apache.doris.nereids.trees.expressions.functions.window.Lag;
-import org.apache.doris.nereids.trees.expressions.functions.window.LastValue;
-import org.apache.doris.nereids.trees.expressions.functions.window.Lead;
-import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
-import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
+import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
 import org.apache.doris.nereids.trees.expressions.literal.ArrayLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.BigIntLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
@@ -110,7 +105,8 @@ import org.apache.doris.nereids.trees.expressions.literal.VarcharLiteral;
  */
 public abstract class ExpressionVisitor<R, C>
         implements ScalarFunctionVisitor<R, C>, AggregateFunctionVisitor<R, C>,
-        TableValuedFunctionVisitor<R, C>, TableGeneratingFunctionVisitor<R, C> {
+        TableValuedFunctionVisitor<R, C>, TableGeneratingFunctionVisitor<R, C>,
+        WindowFunctionVisitor<R, C> {
 
     public abstract R visit(Expression expr, C context);
 
@@ -132,6 +128,11 @@ public abstract class ExpressionVisitor<R, C>
     @Override
     public R visitTableGeneratingFunction(TableGeneratingFunction tableGeneratingFunction, C context) {
         return visitBoundFunction(tableGeneratingFunction, context);
+    }
+
+    @Override
+    public R visitWindowFunction(WindowFunction windowFunction, C context) {
+        return visitBoundFunction(windowFunction, context);
     }
 
     public R visitBoundFunction(BoundFunction boundFunction, C context) {
@@ -438,36 +439,7 @@ public abstract class ExpressionVisitor<R, C>
         return visitNamedExpression(unboundStar, context);
     }
 
-    /* ********************************************************************************************
-     * Window functions
-     * ********************************************************************************************/
-
-    public R visitDenseRank(DenseRank denseRank, C context) {
-        return visit(denseRank, context);
+    public R visitWindow(Window window, C context) {
+        return visit(window, context);
     }
-
-    public R visitFirstValue(FirstValue firstValue, C context) {
-        return visit(firstValue, context);
-    }
-
-    public R visitLag(Lag lag, C context) {
-        return visit(lag, context);
-    }
-
-    public R visitLastValue(LastValue lastValue, C context) {
-        return visit(lastValue, context);
-    }
-
-    public R visitLead(Lead lead, C context) {
-        return visit(lead, context);
-    }
-
-    public R visitRank(Rank rank, C context) {
-        return visit(rank, context);
-    }
-
-    public R visitRowNumber(RowNumber rowNumber, C context) {
-        return visit(rowNumber, context);
-    }
-
 }

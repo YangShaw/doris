@@ -91,6 +91,7 @@ public class WindowSpec extends Expression implements PropagateNullable {
 
         windowFrame.ifPresent(wf -> sb.append(wf));
         String string = sb.toString();
-        return string.endsWith(", ") ? string.substring(0, string.length() - 1) : string;
+        string = string.endsWith(", ") ? string.substring(0, string.length() - 1) : string;
+        return string + ")";
     }
 }

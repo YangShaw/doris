@@ -21,6 +21,8 @@ import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 
+import java.util.Objects;
+
 /**
  * window frame
  */
@@ -62,6 +64,20 @@ public class WindowFrame extends Expression implements PropagateNullable {
 
     // confirm that offset of boundary > 0
     // check2()
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        WindowFrame other = (WindowFrame) o;
+        return Objects.equals(this.frameUnits, other.frameUnits)
+            && Objects.equals(this.leftBoundary, other.leftBoundary)
+            && Objects.equals(this.rightBoundary, other.rightBoundary);
+    }
 
     @Override
     public String toSql() {

@@ -18,7 +18,9 @@
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.WindowFrame;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -75,5 +77,18 @@ public class FrameBoundary {
         sb.append(frameBoundType);
 
         return sb.toString();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        FrameBoundary other = (FrameBoundary) o;
+        return Objects.equals(this.frameBoundType, other.frameBoundType)
+            && Objects.equals(this.boundValue, other.boundValue);
     }
 }
