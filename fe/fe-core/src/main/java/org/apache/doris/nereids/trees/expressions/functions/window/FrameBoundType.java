@@ -38,6 +38,9 @@ public enum FrameBoundType {
         this.description = description;
     }
 
+    /**
+     * reverse current FrameBoundType
+     */
     public FrameBoundType reverse() {
         switch (this) {
             case UNBOUNDED_PRECEDING:

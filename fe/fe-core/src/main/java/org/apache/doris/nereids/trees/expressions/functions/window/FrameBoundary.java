@@ -88,7 +88,6 @@ public class FrameBoundary {
         return new FrameBoundary(boundOffset, frameBoundType.reverse());
     }
 
-
     public FrameBoundType getFrameBoundType() {
         return frameBoundType;
     }

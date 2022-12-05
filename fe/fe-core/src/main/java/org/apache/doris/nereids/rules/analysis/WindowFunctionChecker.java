@@ -17,7 +17,6 @@
 
 package org.apache.doris.nereids.rules.analysis;
 
-import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.Expression;
@@ -34,10 +33,12 @@ import org.apache.doris.nereids.trees.expressions.functions.window.LastValue;
 import org.apache.doris.nereids.trees.expressions.functions.window.Lead;
 import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
 import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
+import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionVisitor;
 import org.apache.doris.nereids.util.TypeCoercionUtils;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -53,25 +54,36 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         this.window = window;
     }
 
+    /**
+     * step 1: check windowFrame in window;
+     */
     public void checkWindowFrameBeforeFunc() {
         window.getWindowSpec().getWindowFrame().ifPresent(this::withWindowFrame);
     }
 
+    /**
+     * step 2: check windowFunction in window
+     */
     public Expression checkWindowFunction() {
         // todo: change Window.windowFunction's class from UnboundFunction to WindowFunction
+        // todo: visitNtile()
 
-        // in checkWindowFrameBeforeFunc() we have confirmed that if windowFrame exist, it has both left and right boundary,
-        // therefore in all these following visitXXX functions we will not check whether the right boundary is null.
+        // in checkWindowFrameBeforeFunc() we have confirmed that both left and right boundary are set as long as
+        // windowFrame exists, therefore in all following visitXXX functions we don't need to check whether the right
+        // boundary is null.
         return window.accept(this, new CheckContext());
     }
 
+    /**
+     * step 3: check window
+     */
     public void checkWindowAfterFunc() {
         // reverse windowFrame
         Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
         if (windowFrame.isPresent()) {
             WindowFrame wf = windowFrame.get();
             if (wf.getRightBoundary().is(FrameBoundType.UNBOUNDED_FOLLOWING)
-                && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
+                    && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
                 // reverse OrderKey's asc and isNullFirst;
                 // in checkWindowFrameBeforeFunc(), we have confirmed that orderKeyLists must exist
                 window.getWindowSpec().setOrderKeyList(window.getWindowSpec().getOrderKeyList().get().stream()
@@ -111,7 +123,10 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * 1. (unbounded following, xxx) || (offset following, !following)
      * 2. (xxx, unbounded preceding) || (!preceding, offset preceding)
      * 3. RANGE && ( (offset preceding, xxx) || (xxx, offset following) || (current row, current row) )
-     * 4.
+     *
+     * WindowFrame boundOffset check:
+     * 4. check value of boundOffset: Literal; Positive; Integer (for ROWS) or Numeric (for RANGE)
+     * 5. check that boundOffset of left <= boundOffset of right
      */
     private void withWindowFrame(WindowFrame windowFrame) {
         //        if (windowFrame.getRightBoundary() != null) {
@@ -162,36 +177,60 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
             }
         }
 
-        // check offset
-        // 1 postitive
+        // case 4
         if (left.hasOffset()) {
             withFrameBoundOffset(left);
         }
-
-        // check correctness of left boundary and right boundary
-
-        // 检查左右边界是否有序；
-
-        // "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
-        if (windowFrame.getLeftBoundary().getFrameBoundType().isFollowing()) {
-            throw new RuntimeException("");
+        if (right.hasOffset()) {
+            withFrameBoundOffset(right);
         }
 
-        // "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
-        // "over( rows|range [UNBOUNDED] PRECEDING)"
-        //   equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
-        // windowFrame.setRightBoundary(new FrameBoundary(Optional.empty(), FrameBoundType.CURRENT_ROW));
+        // case 5
+        // check correctness of left boundary and right boundary
+        if (left.hasOffset() && right.hasOffset()) {
+            double leftOffsetValue = ((Literal) left.getBoundOffset().get()).getDouble();
+            double rightOffsetValue = ((Literal) right.getBoundOffset().get()).getDouble();
+            if (left.asPreceding() && right.asPreceding()) {
+                Preconditions.checkArgument(leftOffsetValue >= rightOffsetValue, "WindowFrame with "
+                        + "PRECEDING boundary requires that leftBoundOffset >= rightBoundOffset");
+            } else if (left.asFollowing() && right.asFollowing()) {
+                Preconditions.checkArgument(leftOffsetValue <= rightOffsetValue, "WindowFrame with "
+                        + "FOLLOWING boundary requires that leftBoundOffset >= rightBoundOffset");
+            }
+        }
 
         window.getWindowSpec().setWindowFrame(windowFrame);
-        // return windowFrame;
     }
 
+    /**
+     * check boundOffset of FrameBoundary if it exists:
+     * 1 boundOffset should be Literal, but this restriction can be removed after completing FoldConstant
+     * 2 boundOffset should be positive
+     * 2 boundOffset should be a positive INTEGER if FrameUnitsType == ROWS
+     * 3 boundOffset should be a positive INTEGER or DECIMAL if FrameUnitsType == RANGE
+     */
     private void withFrameBoundOffset(FrameBoundary frameBoundary) {
         Expression offset = frameBoundary.getBoundOffset().get();
 
-        // it depends on FoldConstant
-        Preconditions.checkArgument(offset.isLiteral());
+        // case 1
+        Preconditions.checkArgument(offset.isLiteral(), "BoundOffset of WindowFrame must be Literal");
 
+        // case 2
+        boolean isPositive = ((Literal) offset).getDouble() > 0;
+        Preconditions.checkArgument(isPositive, "BoundOffset of WindowFrame must be positive");
+
+        FrameUnitsType frameUnits = window.getWindowSpec().getWindowFrame().get().getFrameUnits();
+        // case 3
+        if (frameUnits == FrameUnitsType.ROWS) {
+            Preconditions.checkArgument(offset.getDataType().isIntegralType(),
+                    "BoundOffset of ROWS WindowFrame must be an Integer");
+        }
+
+        // case 4
+        if (frameUnits == FrameUnitsType.RANGE) {
+            Preconditions.checkArgument(offset.getDataType().isNumericType(),
+                    "BoundOffset of RANGE WindowFrame must be an Integer or Decimal");
+        }
     }
 
     /**
@@ -298,7 +337,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         if (windowFrame.isPresent()) {
             WindowFrame wf = windowFrame.get();
             if (wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)
-                && wf.getLeftBoundary().isNot(FrameBoundType.PRECEDING)) {
+                    && wf.getLeftBoundary().isNot(FrameBoundType.PRECEDING)) {
 
                 wf.setRightBoundary(wf.getLeftBoundary());
                 LastValue lastValue = new LastValue(firstValue.child(0));
@@ -306,13 +345,13 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
             }
 
             if (wf.getLeftBoundary().is(FrameBoundType.UNBOUNDED_PRECEDING)
-                && wf.getRightBoundary().isNot(FrameBoundType.PRECEDING)) {
+                    && wf.getRightBoundary().isNot(FrameBoundType.PRECEDING)) {
                 wf.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
             }
             window.getWindowSpec().setWindowFrame(wf);
         } else {
             window.getWindowSpec().setWindowFrame(new WindowFrame(FrameUnitsType.ROWS,
-                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
+                    FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
         }
         return firstValue;
     }

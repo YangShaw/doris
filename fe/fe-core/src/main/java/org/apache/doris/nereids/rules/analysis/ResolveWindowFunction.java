@@ -167,12 +167,11 @@ public class ResolveWindowFunction implements RewriteRuleFactory {
      */
     private LogicalWindow init(List<Window> windowList, LogicalPlan root) {
 
-        // todo: rewriteSmap? 只处理特定的几个函数（ntile）
         windowList.stream().forEach(window -> {
             WindowFunctionChecker checker = new WindowFunctionChecker(window);
             checker.checkWindowFrameBeforeFunc();
             checker.checkWindowFunction();
-
+            checker.checkWindowAfterFunc();
         });
 
         // create AnalyticInfo

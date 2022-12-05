@@ -17,8 +17,10 @@
 
 package org.apache.doris.nereids.trees;
 
-public interface NullaryNode<NODE_TYPE extends TreeNode<NODE_TYPE>>
-    extends TreeNode<NODE_TYPE> {
+/**
+ * interface for all tree node that have no children.
+ */
+public interface NullaryNode<NODE_TYPE extends TreeNode<NODE_TYPE>> extends TreeNode<NODE_TYPE> {
 
     @Override
     default int arity() {

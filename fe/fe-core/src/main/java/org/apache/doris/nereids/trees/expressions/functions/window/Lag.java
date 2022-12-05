@@ -17,18 +17,17 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
-import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.ImplicitlyCastableSignature;
-import org.apache.doris.nereids.trees.expressions.functions.scalar.Abs;
 import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.shape.TernaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
-
-import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.types.IntegerType;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 
