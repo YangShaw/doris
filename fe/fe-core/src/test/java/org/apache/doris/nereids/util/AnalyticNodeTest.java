@@ -55,10 +55,10 @@ public class AnalyticNodeTest extends TestWithFeService {
 
     @Test
     public void testAnalyze() {
-        String sql = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name) FROM supplier";
-//        String sql2 = "SELECT s_city, sum(s_suppkey) FROM supplier GROUP BY s_city ORDER BY s_city limit 10";
-//        String sql2 = "SELECT s_city FROM supplier GROUP BY s_city ORDER BY s_city limit 10";
-//        String sql2 = "SELECT s_city FROM supplier ORDER BY s_city limit 10";
+        // String sql = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name) FROM supplier";
+        // String sql2 = "SELECT s_city, sum(s_suppkey) FROM supplier GROUP BY s_city ORDER BY s_city limit 10";
+        // String sql2 = "SELECT s_city FROM supplier GROUP BY s_city ORDER BY s_city limit 10";
+        // String sql2 = "SELECT s_city FROM supplier ORDER BY s_city limit 10";
         String sql2 = "SELECT s_city FROM supplier ORDER BY s_city limit 10";
 
         PlanChecker.from(connectContext).checkPlannerResult(sql2);
@@ -66,8 +66,18 @@ public class AnalyticNodeTest extends TestWithFeService {
 
     @Test
     public void testWindowFunctionChecker() {
-        String sql1 = "SELECT row_number() over() FROM supplier";
-        PlanChecker.from(connectContext).checkPlannerResult(sql1);
+        // String rowNumber = "SELECT row_number() over() FROM supplier";
+
+        // String rank = "SELECT rank() over() FROM supplier";
+        // 带有参数的window function还没有适配（lag，lead）
+        String lag = "SELECT lag(s_suppkey, 1, 2) over() FROM supplier";
+        PlanChecker.from(connectContext).checkPlannerResult(lag);
+    }
+
+    @Test
+    public void testExpr() {
+        String substring = "SELECT substring(s_nation, 0, 1+2) FROM supplier";
+        PlanChecker.from(connectContext).checkPlannerResult(substring);
     }
 
     @Test

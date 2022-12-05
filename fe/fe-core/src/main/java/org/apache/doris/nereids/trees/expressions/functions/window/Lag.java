@@ -17,19 +17,50 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.functions.ImplicitlyCastableSignature;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.Abs;
+import org.apache.doris.nereids.trees.expressions.literal.Literal;
+import org.apache.doris.nereids.trees.expressions.shape.TernaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
+
+import com.google.common.collect.ImmutableList;
+import org.apache.doris.nereids.types.IntegerType;
 
 import java.util.List;
 
 /** Window function: lag */
-public class Lag extends WindowFunction {
+public class Lag extends WindowFunction implements TernaryExpression, ImplicitlyCastableSignature {
 
+    public Lag(Expression child) {
+        this(child, Literal.of(1), Literal.of(null));
+    }
 
-    public Lag(String name, Expression... arguments) {
-        super(name, arguments);
+    public Lag(Expression child, Expression offset) {
+        this(child, offset, Literal.of(null));
+    }
+
+    public Lag(Expression child, Expression offset, Expression defaultValue) {
+        super("lag", child, offset, defaultValue);
+    }
+
+    public Lag(List<Expression> children) {
+        super("lag", children);
+    }
+
+    public Expression getOffset() {
+        return child(1);
+    }
+
+    public Expression getDefaultValue() {
+        return child(2);
+    }
+
+    public void setDefaultValue(Expression defaultValue) {
+        this.children.set(2, defaultValue);
     }
 
     @Override
@@ -38,17 +69,25 @@ public class Lag extends WindowFunction {
     }
 
     @Override
-    public List<FunctionSignature> getSignatures() {
-        return null;
+    public Lag withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() >= 1 && children.size() <= 3);
+        return new Lag(children);
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments, List<FunctionSignature> signatures) {
-        return null;
+    public List<FunctionSignature> getSignatures() {
+        return ImmutableList.of(FunctionSignature.ret(getArgument(0).getDataType())
+                .args(getArgument(0).getDataType(), IntegerType.INSTANCE, getArgument(0).getDataType()));
     }
 
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitLag(this, context);
     }
+
+    @Override
+    public DataType getDataType() {
+        return child(0).getDataType();
+    }
+
 }

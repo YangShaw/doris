@@ -18,7 +18,6 @@
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.nereids.trees.expressions.Expression;
-import org.apache.doris.nereids.trees.expressions.WindowFrame;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -28,31 +27,67 @@ import java.util.Optional;
  */
 public class FrameBoundary {
 
+    private Optional<Expression> boundOffset;
     private FrameBoundType frameBoundType;
 
-    private Optional<Expression> boundValue;
-
     public FrameBoundary(FrameBoundType frameBoundType) {
+        this.boundOffset = Optional.empty();
         this.frameBoundType = frameBoundType;
-        this.boundValue = Optional.empty();
     }
 
-    public FrameBoundary(FrameBoundType frameBoundType, Optional<Expression> boundValue) {
+    public FrameBoundary(Optional<Expression> boundOffset, FrameBoundType frameBoundType) {
+        this.boundOffset = boundOffset;
         this.frameBoundType = frameBoundType;
-        this.boundValue = boundValue;
     }
 
     public static FrameBoundary newPrecedingBoundary() {
         return new FrameBoundary(FrameBoundType.UNBOUNDED_PRECEDING);
     }
 
+    public static FrameBoundary newPrecedingBoundary(Expression boundValue) {
+        return new FrameBoundary(Optional.of(boundValue), FrameBoundType.UNBOUNDED_PRECEDING);
+    }
+
     public static FrameBoundary newFollowingBoundary() {
         return new FrameBoundary(FrameBoundType.UNBOUNDED_FOLLOWING);
+    }
+
+    public static FrameBoundary newFollowingBoundary(Expression boundValue) {
+        return new FrameBoundary(Optional.of(boundValue), FrameBoundType.UNBOUNDED_FOLLOWING);
     }
 
     public static FrameBoundary newCurrentRowBoundary() {
         return new FrameBoundary(FrameBoundType.CURRENT_ROW);
     }
+
+    public boolean is(FrameBoundType otherType) {
+        return this.frameBoundType == otherType;
+    }
+
+    public boolean isNot(FrameBoundType otherType) {
+        return this.frameBoundType != otherType;
+    }
+
+    public boolean isNull() {
+        return this.frameBoundType == FrameBoundType.EMPTY_BOUNDARY;
+    }
+
+    public boolean hasOffset() {
+        return frameBoundType == FrameBoundType.PRECEDING || frameBoundType == FrameBoundType.FOLLOWING;
+    }
+
+    public boolean asPreceding() {
+        return frameBoundType == FrameBoundType.PRECEDING || frameBoundType == FrameBoundType.UNBOUNDED_PRECEDING;
+    }
+
+    public boolean asFollowing() {
+        return frameBoundType == FrameBoundType.FOLLOWING || frameBoundType == FrameBoundType.UNBOUNDED_FOLLOWING;
+    }
+
+    public FrameBoundary reverse() {
+        return new FrameBoundary(boundOffset, frameBoundType.reverse());
+    }
+
 
     public FrameBoundType getFrameBoundType() {
         return frameBoundType;
@@ -62,18 +97,18 @@ public class FrameBoundary {
         this.frameBoundType = frameBoundType;
     }
 
-    public Optional<Expression> getBoundValue() {
-        return boundValue;
+    public Optional<Expression> getBoundOffset() {
+        return boundOffset;
     }
 
-    public void setBoundValue(Optional<Expression> boundValue) {
-        this.boundValue = boundValue;
+    public void setBoundOffset(Optional<Expression> boundOffset) {
+        this.boundOffset = boundOffset;
     }
 
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        boundValue.ifPresent(value -> sb.append(value + " "));
+        boundOffset.ifPresent(value -> sb.append(value + " "));
         sb.append(frameBoundType);
 
         return sb.toString();
@@ -89,6 +124,6 @@ public class FrameBoundary {
         }
         FrameBoundary other = (FrameBoundary) o;
         return Objects.equals(this.frameBoundType, other.frameBoundType)
-            && Objects.equals(this.boundValue, other.boundValue);
+            && Objects.equals(this.boundOffset, other.boundOffset);
     }
 }

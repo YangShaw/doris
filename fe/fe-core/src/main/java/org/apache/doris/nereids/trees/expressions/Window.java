@@ -17,23 +17,21 @@
 
 package org.apache.doris.nereids.trees.expressions;
 
-import com.google.common.base.Preconditions;
 import org.apache.doris.nereids.analyzer.UnboundFunction;
 import org.apache.doris.nereids.exceptions.UnboundException;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
-import org.apache.doris.nereids.trees.expressions.functions.agg.Max;
-import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
-import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
-import org.apache.doris.nereids.types.BooleanType;
+import org.apache.doris.nereids.trees.expressions.shape.UnaryExpression;
 import org.apache.doris.nereids.types.DataType;
+
+import com.google.common.base.Preconditions;
 
 import java.util.List;
 
 /**
  * represents window function
  */
-public class Window extends Expression implements PropagateNullable {
+public class Window extends Expression implements UnaryExpression, PropagateNullable {
 
     private UnboundFunction windowFunction;
 
@@ -41,21 +39,21 @@ public class Window extends Expression implements PropagateNullable {
 
     private WindowSpec windowSpec;
 
-    public Window(UnboundFunction windowFunction, WindowSpec windowSpec) {
+    public Window(Expression windowFunction, WindowSpec windowSpec) {
         super(windowFunction);
-//        this.windowFunction = windowFunction;
+        //        this.windowFunction = windowFunction;
         this.windowSpec = windowSpec;
     }
 
-    public Window(BoundFunction boundFunction, WindowSpec windowSpec) {
-        super(boundFunction);
-        this.boundWindowFunction = boundFunction;
-        this.windowSpec = windowSpec;
-    }
+    //    public Window(BoundFunction boundFunction, WindowSpec windowSpec) {
+    //        super(boundFunction);
+    //        this.boundWindowFunction = boundFunction;
+    //        this.windowSpec = windowSpec;
+    //    }
 
     public Expression getWindowFunction() {
-        return child(0);
-//        return windowFunction;
+        return child();
+        //        return windowFunction;
     }
 
     public void setBoundWindowFunction(BoundFunction boundFunction) {
@@ -79,7 +77,8 @@ public class Window extends Expression implements PropagateNullable {
     @Override
     public Window withChildren(List<Expression> children) {
         Preconditions.checkArgument(children.size() == 1);
-        return new Window((BoundFunction) children.get(0), windowSpec);
+        //        Expression windowFunction = children.get(0);
+        return new Window(children.get(0), windowSpec);
     }
 
     @Override

@@ -26,12 +26,33 @@ public enum FrameBoundType {
     UNBOUNDED_FOLLOWING("UNBOUNDED_FOLLOWING"),
     CURRENT_ROW("CURRENT_ROW"),
     PRECEDING("PRECEDING"),
-    FOLLOWING("FOLLOWING");
+    FOLLOWING("FOLLOWING"),
+
+    // represents that the boundary is null. We use this value as default
+    // to avoid checking if a boundary is null frequently.
+    EMPTY_BOUNDARY("EMPTY_BOUNDARY");
 
     private final String description;
 
     FrameBoundType(String description) {
         this.description = description;
+    }
+
+    public FrameBoundType reverse() {
+        switch (this) {
+            case UNBOUNDED_PRECEDING:
+                return UNBOUNDED_FOLLOWING;
+            case UNBOUNDED_FOLLOWING:
+                return UNBOUNDED_PRECEDING;
+            case PRECEDING:
+                return FOLLOWING;
+            case FOLLOWING:
+                return PRECEDING;
+            case CURRENT_ROW:
+                return CURRENT_ROW;
+            default:
+                return EMPTY_BOUNDARY;
+        }
     }
 
     public boolean isFollowing() {

@@ -784,7 +784,7 @@ public class AnalyticExpr extends Expr {
         }
 
         // Reverse the ordering and window for windows ending with UNBOUNDED FOLLOWING,
-        // and and not starting with UNBOUNDED PRECEDING.
+        // and not starting with UNBOUNDED PRECEDING.
         if (window != null
                 && window.getRightBoundary().getType() == BoundaryType.UNBOUNDED_FOLLOWING
                 && window.getLeftBoundary().getType() != BoundaryType.UNBOUNDED_PRECEDING) {

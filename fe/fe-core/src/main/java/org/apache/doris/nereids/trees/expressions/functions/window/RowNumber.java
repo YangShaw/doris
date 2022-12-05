@@ -17,20 +17,22 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
-import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
-import org.apache.doris.nereids.trees.expressions.functions.agg.Max;
+import org.apache.doris.nereids.trees.expressions.shape.NullaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
 import org.apache.doris.nereids.types.coercion.AbstractDataType;
 
+import com.google.common.collect.ImmutableList;
+
 import java.util.List;
 
-public class RowNumber extends WindowFunction {
+/**
+ * Window function: Row_number()
+ */
+public class RowNumber extends WindowFunction implements NullaryExpression {
 
     public RowNumber() {
         super("row_number");
@@ -42,7 +44,8 @@ public class RowNumber extends WindowFunction {
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments, List<FunctionSignature> signatures) {
+    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
+                                             List<FunctionSignature> signatures) {
         return null;
     }
 

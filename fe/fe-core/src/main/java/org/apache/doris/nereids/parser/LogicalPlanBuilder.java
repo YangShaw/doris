@@ -1040,7 +1040,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                 break;
             default:
         }
-        return new FrameBoundary(frameBoundType, expression);
+        return new FrameBoundary(expression, frameBoundType);
     }
 
     @Override

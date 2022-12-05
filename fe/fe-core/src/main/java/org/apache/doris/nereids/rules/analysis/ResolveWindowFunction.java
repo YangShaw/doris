@@ -17,16 +17,17 @@
 
 package org.apache.doris.nereids.rules.analysis;
 
-import com.google.common.collect.ImmutableList;
-import org.apache.doris.nereids.analyzer.UnboundAlias;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
+import org.apache.doris.nereids.rules.rewrite.RewriteRuleFactory;
+import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.WindowSpec;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
@@ -37,6 +38,7 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.commons.collections.CollectionUtils;
 
@@ -61,7 +63,7 @@ import java.util.stream.Collectors;
  * *3 对于每个SortGroup，生成LogicalSort算子；
  * *4 对于SortGroup中的每个WindowGroup，生成LogicalWindow算子；
  */
-public class ResolveWindowFunction implements AnalysisRuleFactory {
+public class ResolveWindowFunction implements RewriteRuleFactory {
 
     /**
      * Matched patterns:
@@ -79,7 +81,7 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
                     LogicalSort<LogicalAggregate<GroupPlan>> logicalSort = ctx.root;
 
                     List<Expression> expressionList = logicalSort.getOrderKeys().stream()
-                        .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
+                            .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
                     List<Window> windowList = extractWindowExpression(expressionList);
 
                     LogicalAggregate<GroupPlan> logicalAggregate = ctx.root.child();
@@ -97,7 +99,7 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
                     LogicalSort<LogicalProject<GroupPlan>> logicalSort = ctx.root;
 
                     List<Expression> expressionList = logicalSort.getOrderKeys().stream()
-                        .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
+                            .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
                     List<Window> windowList = extractWindowExpression(expressionList);
 
                     LogicalProject<GroupPlan> logicalProject = ctx.root.child();
@@ -113,9 +115,7 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
             RuleType.WINDOW_FUNCTION_FROM_PROJECT.build(
                 logicalProject().thenApply(ctx -> {
                     LogicalProject<GroupPlan> logicalProject = ctx.root;
-                    List<NamedExpression> projects = logicalProject.getProjects();
-
-                    List<Window> windowList = extractWindowExpression(projects);
+                    List<Window> windowList = extractWindowExpression(logicalProject.getProjects());
 
                     if (windowList.isEmpty()) {
                         return logicalProject;
@@ -126,9 +126,7 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
             RuleType.WINDOW_FUNCTION_FROM_AGG.build(
                 logicalAggregate().thenApply(ctx -> {
                     LogicalAggregate<GroupPlan> logicalAggregate = ctx.root;
-                    List<NamedExpression> outputExpressions = logicalAggregate.getOutputExpressions();
-
-                    List<Window> windowList = extractWindowExpression(outputExpressions);
+                    List<Window> windowList = extractWindowExpression(logicalAggregate.getOutputExpressions());
 
                     if (windowList.isEmpty()) {
                         return logicalAggregate;
@@ -155,7 +153,7 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
 
     private <E extends Expression> List<Window> extractWindowExpression(List<E> expressionList) {
         List<Window> windowList = expressionList.stream().filter(expression -> {
-            if (expression instanceof UnboundAlias && expression.child(0) instanceof Window) {
+            if (expression instanceof Alias && expression.child(0) instanceof Window) {
                 return true;
             }
             return false;
@@ -170,7 +168,12 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
     private LogicalWindow init(List<Window> windowList, LogicalPlan root) {
 
         // todo: rewriteSmap? 只处理特定的几个函数（ntile）
-        windowList.stream().forEach(window -> new WindowFunctionChecker(window).check());
+        windowList.stream().forEach(window -> {
+            WindowFunctionChecker checker = new WindowFunctionChecker(window);
+            checker.checkWindowFrameBeforeFunc();
+            checker.checkWindowFunction();
+
+        });
 
         // create AnalyticInfo
 
@@ -212,6 +215,20 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
      * -
      */
     private void checkWindowFrame(Window window) {
+        WindowSpec windowSpec = window.getWindowSpec();
+        if (window.getWindowSpec().getWindowFrame().isPresent()) {
+            // WindowFrame windowFrame = window.getWindowSpec().getWindowFrame().get();
+
+            // windowFrame must be with orderKey clause
+            if (!windowSpec.getOrderKeyList().isPresent()) {
+                throw new AnalysisException("WindowFrame in any window function must be used with order by clause");
+            }
+
+            // windowFrame's check and complete, including offset validation
+
+            //
+        }
+
         if (!window.getWindowSpec().getWindowFrame().isPresent()) {
             // todo: 根据不同聚合函数来定义不同的frame
             WindowFrame windowFrame = new WindowFrame(FrameUnitsType.ROWS,
@@ -238,7 +255,7 @@ public class ResolveWindowFunction implements AnalysisRuleFactory {
         // "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
         // "over( rows|range [UNBOUNDED] PRECEDING)"
         //   equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
-        windowFrame.setRightBoundary(new FrameBoundary(FrameBoundType.CURRENT_ROW, Optional.empty()));
+        windowFrame.setRightBoundary(new FrameBoundary(Optional.empty(), FrameBoundType.CURRENT_ROW));
     }
 
     /* ********************************************************************************************

@@ -15,23 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.doris.nereids.trees.expressions.functions.window;
 
+package org.apache.doris.nereids.trees.expressions.shape;
+
+import org.apache.doris.nereids.trees.NullaryNode;
 import org.apache.doris.nereids.trees.expressions.Expression;
-import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
-
-import java.util.List;
 
 /**
- * Window functions, as known as analytic functions.
+ * Interface for all expression that have no children.
  */
-public abstract class WindowFunction extends BoundFunction {
-
-    public WindowFunction(String name, Expression... arguments) {
-        super(name, arguments);
-    }
-
-    public WindowFunction(String name, List<Expression> children) {
-        super(name, children);
-    }
+public interface NullaryExpression extends NullaryNode<Expression> {
 }

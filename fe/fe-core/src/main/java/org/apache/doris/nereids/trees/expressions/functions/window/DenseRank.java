@@ -19,13 +19,17 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.shape.NullaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
+import org.apache.doris.nereids.types.IntegerType;
 
 import java.util.List;
 
-public class DenseRank extends WindowFunction {
-
+/**
+ * Window function: Dense_rank()
+ */
+public class DenseRank extends WindowFunction implements NullaryExpression {
 
     public DenseRank(String name, Expression... arguments) {
         super(name, arguments);
@@ -37,7 +41,8 @@ public class DenseRank extends WindowFunction {
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments, List<FunctionSignature> signatures) {
+    public FunctionSignature searchSignature(List<DataType> argumentTypes,
+                                             List<Expression> arguments, List<FunctionSignature> signatures) {
         return null;
     }
 
@@ -49,5 +54,10 @@ public class DenseRank extends WindowFunction {
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitDenseRank(this, context);
+    }
+
+    @Override
+    public DataType getDataType() {
+        return IntegerType.INSTANCE;
     }
 }

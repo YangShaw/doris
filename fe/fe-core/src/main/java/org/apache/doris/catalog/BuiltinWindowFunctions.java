@@ -23,9 +23,9 @@ import org.apache.doris.nereids.trees.expressions.functions.window.Lag;
 import org.apache.doris.nereids.trees.expressions.functions.window.LastValue;
 import org.apache.doris.nereids.trees.expressions.functions.window.Lead;
 import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
+import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
 
 import com.google.common.collect.ImmutableList;
-import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
 
 /**
  * Builtin aggregate functions.

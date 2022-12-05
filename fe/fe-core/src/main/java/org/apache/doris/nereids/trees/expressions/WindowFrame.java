@@ -18,8 +18,10 @@
 package org.apache.doris.nereids.trees.expressions;
 
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
+import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 
 import java.util.Objects;
 
@@ -35,13 +37,17 @@ public class WindowFrame extends Expression implements PropagateNullable {
     private FrameBoundary rightBoundary;
 
     public WindowFrame(FrameUnitsType frameUnits, FrameBoundary leftBoundary) {
-        this(frameUnits, leftBoundary, null);
+        this(frameUnits, leftBoundary, new FrameBoundary(FrameBoundType.EMPTY_BOUNDARY));
     }
 
     public WindowFrame(FrameUnitsType frameUnits, FrameBoundary leftBoundary, FrameBoundary rightBoundary) {
         this.frameUnits = frameUnits;
         this.leftBoundary = leftBoundary;
         this.rightBoundary = rightBoundary;
+    }
+
+    public FrameUnitsType getFrameUnits() {
+        return frameUnits;
     }
 
     public FrameBoundary getLeftBoundary() {
@@ -59,6 +65,7 @@ public class WindowFrame extends Expression implements PropagateNullable {
     public void setRightBoundary(FrameBoundary rightBoundary) {
         this.rightBoundary = rightBoundary;
     }
+
     // confirm that leftBoundary <= rightBoundary
     // check1()
 
@@ -102,6 +109,11 @@ public class WindowFrame extends Expression implements PropagateNullable {
         }
         sb.append(")");
         return sb.toString();
+    }
+
+    @Override
+    public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
+        return visitor.visitWindowFrame(this, context);
     }
 
 }

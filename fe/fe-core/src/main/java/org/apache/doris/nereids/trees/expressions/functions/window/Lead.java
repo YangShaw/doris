@@ -19,6 +19,8 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.literal.Literal;
+import org.apache.doris.nereids.trees.expressions.shape.TernaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 
@@ -27,10 +29,30 @@ import java.util.List;
 /**
  * Window function: Lead()
  */
-public class Lead extends WindowFunction {
+public class Lead extends WindowFunction implements TernaryExpression {
 
-    public Lead(String name, Expression... arguments) {
-        super(name, arguments);
+    public Lead(Expression child) {
+        this(child, Literal.of(1), Literal.of(null));
+    }
+
+    public Lead(Expression child, Expression offset) {
+        this(child, offset, Literal.of(null));
+    }
+
+    public Lead(Expression child, Expression offset, Expression defaultValue) {
+        super("lead", child, offset, defaultValue);
+    }
+
+    public Expression getOffset() {
+        return child(1);
+    }
+
+    public Expression getDefaultValue() {
+        return child(2);
+    }
+
+    public void setDefaultValue(Expression defaultValue) {
+        this.children.set(2, defaultValue);
     }
 
     @Override
@@ -49,7 +71,13 @@ public class Lead extends WindowFunction {
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments, List<FunctionSignature> signatures) {
+    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
+                                             List<FunctionSignature> signatures) {
         return null;
+    }
+
+    @Override
+    public DataType getDataType() {
+        return child(0).getDataType();
     }
 }

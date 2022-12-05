@@ -24,10 +24,13 @@ import org.apache.doris.nereids.types.DataType;
 
 import java.util.List;
 
-public class FirstValue extends WindowFunction {
+/**
+ * Window function: First_value()
+ */
+public class FirstValue extends FirstOrLastValue {
 
-    public FirstValue(String name, Expression... arguments) {
-        super(name, arguments);
+    public FirstValue(Expression child) {
+        super("first_value", child);
     }
 
     @Override
@@ -36,7 +39,8 @@ public class FirstValue extends WindowFunction {
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments, List<FunctionSignature> signatures) {
+    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
+                                             List<FunctionSignature> signatures) {
         return null;
     }
 
@@ -48,5 +52,10 @@ public class FirstValue extends WindowFunction {
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitFirstValue(this, context);
+    }
+
+    @Override
+    public DataType getDataType() {
+        return child().getDataType();
     }
 }

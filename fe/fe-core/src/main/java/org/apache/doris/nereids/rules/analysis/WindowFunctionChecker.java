@@ -1,26 +1,51 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package org.apache.doris.nereids.rules.analysis;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.exceptions.AnalysisException;
+import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
+import org.apache.doris.nereids.trees.expressions.functions.window.FirstOrLastValue;
 import org.apache.doris.nereids.trees.expressions.functions.window.FirstValue;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.expressions.functions.window.Lag;
+import org.apache.doris.nereids.trees.expressions.functions.window.LastValue;
 import org.apache.doris.nereids.trees.expressions.functions.window.Lead;
 import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
 import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
-import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
-import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
+import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionVisitor;
+import org.apache.doris.nereids.util.TypeCoercionUtils;
+
+import com.google.common.base.Preconditions;
 
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * todo: the return type may be Void?
  */
-public class WindowFunctionChecker extends ExpressionVisitor<Expression, WindowFunctionChecker.CheckContext> {
+public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, WindowFunctionChecker.CheckContext> {
 
     private Window window;
 
@@ -28,62 +53,310 @@ public class WindowFunctionChecker extends ExpressionVisitor<Expression, WindowF
         this.window = window;
     }
 
-    public WindowFunction check() {
+    public void checkWindowFrameBeforeFunc() {
+        window.getWindowSpec().getWindowFrame().ifPresent(this::withWindowFrame);
+    }
+
+    public Expression checkWindowFunction() {
         // todo: change Window.windowFunction's class from UnboundFunction to WindowFunction
-        Expression windowFunction = window.getWindowFunction();
-        return (WindowFunction)windowFunction.accept(this, new CheckContext());
+
+        // in checkWindowFrameBeforeFunc() we have confirmed that if windowFrame exist, it has both left and right boundary,
+        // therefore in all these following visitXXX functions we will not check whether the right boundary is null.
+        return window.accept(this, new CheckContext());
     }
 
-    @Override
-    public WindowFunction visit(Expression expr, CheckContext context) {
-        return null;
+    public void checkWindowAfterFunc() {
+        // reverse windowFrame
+        Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
+        if (windowFrame.isPresent()) {
+            WindowFrame wf = windowFrame.get();
+            if (wf.getRightBoundary().is(FrameBoundType.UNBOUNDED_FOLLOWING)
+                && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
+                // reverse OrderKey's asc and isNullFirst;
+                // in checkWindowFrameBeforeFunc(), we have confirmed that orderKeyLists must exist
+                window.getWindowSpec().setOrderKeyList(window.getWindowSpec().getOrderKeyList().get().stream()
+                        .map(orderKey -> new OrderKey(orderKey.getExpr(), !orderKey.isAsc(), !orderKey.isNullFirst()))
+                        .collect(Collectors.toList()));
+                // reverse WindowFrame
+                reverseWindow();
+                // reverse WindowFunction, which is used only for first_value() and last_value()
+                Expression windowFunction = window.getWindowFunction();
+                if (windowFunction instanceof FirstOrLastValue) {
+                    window = window.withChildren(ImmutableList.of(((FirstOrLastValue) windowFunction).reverse()));
+                }
+            }
+        } else {
+            // this is equal to DEFAULT_WINDOW in class AnalyticWindow
+            window.getWindowSpec().setWindowFrame(new WindowFrame(FrameUnitsType.RANGE,
+                    FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
+        }
+
     }
 
+    private void reverseWindow() {
+        WindowFrame wf = window.getWindowSpec().getWindowFrame().get();
+        wf.setLeftBoundary(wf.getLeftBoundary().reverse());
+        wf.setRightBoundary(wf.getRightBoundary().reverse());
+    }
+
+    /**
+     *
+     * if WindowFrame doesn't have right boundary, we will set it a default one(current row);
+     * but if WindowFrame itself doesn't exist, we will keep it null still.
+     *
+     * Basic exception cases:
+     * 0. WindowFrame != null, but OrderKeyList == null
+     *
+     * WindowFrame exception cases:
+     * 1. (unbounded following, xxx) || (offset following, !following)
+     * 2. (xxx, unbounded preceding) || (!preceding, offset preceding)
+     * 3. RANGE && ( (offset preceding, xxx) || (xxx, offset following) || (current row, current row) )
+     * 4.
+     */
+    private void withWindowFrame(WindowFrame windowFrame) {
+        //        if (windowFrame.getRightBoundary() != null) {
+        //            return windowFrame;
+        //        }
+
+        // case 0
+        if (window.getWindowSpec().getOrderKeyList().isPresent()) {
+            throw new AnalysisException("WindowFrame clause requires OrderBy clause");
+        }
+
+        // set default rightBoundary
+        // todo: 旧优化器保存了frame原本的描述（tosql）
+        if (windowFrame.getRightBoundary().isNull()) {
+            windowFrame.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
+        }
+        FrameBoundary left = windowFrame.getLeftBoundary();
+        FrameBoundary right = windowFrame.getRightBoundary();
+
+        // case 1
+        if (left.getFrameBoundType() == FrameBoundType.UNBOUNDED_FOLLOWING) {
+            throw new AnalysisException("WindowFrame in any window function cannot use "
+                + "UNBOUNDED FOLLOWING as left boundary");
+        }
+        if (left.getFrameBoundType() == FrameBoundType.FOLLOWING && !right.asFollowing()) {
+            throw new AnalysisException("WindowFrame with FOLLOWING left boundary requires "
+                + "UNBOUNDED FOLLOWING or FOLLOWING right boundary");
+        }
+
+        // case 2
+        if (right.getFrameBoundType() == FrameBoundType.UNBOUNDED_PRECEDING) {
+            throw new AnalysisException("WindowFrame in any window function cannot use "
+                + "UNBOUNDED PRECEDING as right boundary");
+        }
+        if (right.getFrameBoundType() == FrameBoundType.PRECEDING && !left.asPreceding()) {
+            throw new AnalysisException("WindowFrame with PRECEDING right boundary requires "
+                + "UNBOUNDED PRECEDING or PRECEDING left boundary");
+        }
+
+        // case 3
+        // this case will be removed when RANGE with offset boundaries is supported
+        if (windowFrame.getFrameUnits() == FrameUnitsType.RANGE) {
+            if (left.hasOffset() || right.hasOffset()
+                    || (left.getFrameBoundType() == FrameBoundType.CURRENT_ROW
+                    && right.getFrameBoundType() == FrameBoundType.CURRENT_ROW)) {
+                throw new AnalysisException("WindowFrame with RANGE must use both UNBOUNDED boundary or "
+                    + "one UNBOUNDED boundary and one CURRENT ROW");
+            }
+        }
+
+        // check offset
+        // 1 postitive
+        if (left.hasOffset()) {
+            withFrameBoundOffset(left);
+        }
+
+        // check correctness of left boundary and right boundary
+
+        // 检查左右边界是否有序；
+
+        // "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
+        if (windowFrame.getLeftBoundary().getFrameBoundType().isFollowing()) {
+            throw new RuntimeException("");
+        }
+
+        // "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
+        // "over( rows|range [UNBOUNDED] PRECEDING)"
+        //   equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
+        // windowFrame.setRightBoundary(new FrameBoundary(Optional.empty(), FrameBoundType.CURRENT_ROW));
+
+        window.getWindowSpec().setWindowFrame(windowFrame);
+        // return windowFrame;
+    }
+
+    private void withFrameBoundOffset(FrameBoundary frameBoundary) {
+        Expression offset = frameBoundary.getBoundOffset().get();
+
+        // it depends on FoldConstant
+        Preconditions.checkArgument(offset.isLiteral());
+
+    }
+
+    /**
+     * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
+     *
+     * (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
+     */
     @Override
     public RowNumber visitRowNumber(RowNumber rowNumber, CheckContext ctx) {
         // check and complete window frame
-        Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
-            FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
 
-        if (windowFrame.isPresent()) {
-            if (!windowFrame.get().equals(requiredFrame)) {
-                throw new AnalysisException("WindowFrame for ROW_NUMBER() must be null " +
-                    "or match with (ROWS, UNBOUNDED PRECEDING, CURRENT ROW");
-            }
-        } else {
-            window.getWindowSpec().setWindowFrame(requiredFrame);
-        }
+        checkAndCompleteWindowFrame(window, requiredFrame, rowNumber.getName());
 
         // todo: should OrderKey be required?
         return rowNumber;
     }
 
+    /**
+     * required WindowFrame: (UNBOUNDED PRECEDING, offset PRECEDING)
+     * but in Spark, it is (offset PRECEDING, offset PRECEDING)
+     */
     @Override
     public Lag visitLag(Lag lag, CheckContext ctx) {
-        return null;
+        // check and complete window frame
+        window.getWindowSpec().getWindowFrame().ifPresent(wf -> {
+            throw new AnalysisException("WindowFrame for LAG() must be null");
+        });
+
+        Expression column = lag.child(0);
+        Expression offset = lag.getOffset();
+        Expression defaultValue = lag.getDefaultValue();
+        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newPrecedingBoundary(offset));
+        window.getWindowSpec().setWindowFrame(requiredFrame);
+
+        // check if the class of lag's column matches defaultValue, and cast it
+        if (!TypeCoercionUtils.implicitCast(column.getDataType(), defaultValue.getDataType()).isPresent()) {
+            throw new AnalysisException("DefaultValue's Datatype of LAG() cannot match its relevant column. The column "
+                + "type is " + column.getDataType() + ", but the defaultValue type is " + defaultValue.getDataType());
+        }
+        lag.setDefaultValue(TypeCoercionUtils.castIfNotSameType(defaultValue, column.getDataType()));
+
+        // todo: should OrderKey be required?
+        return lag;
     }
 
+    /**
+     * required WindowFrame: (UNBOUNDED PRECEDING, offset FOLLOWING)
+     * but in Spark, it is (offset FOLLOWING, offset FOLLOWING)
+     */
     @Override
     public Lead visitLead(Lead lead, CheckContext ctx) {
-        return null;
+        window.getWindowSpec().getWindowFrame().ifPresent(wf -> {
+            throw new AnalysisException("WindowFrame for LEAD() must be null");
+        });
+
+        Expression column = lead.child(0);
+        Expression offset = lead.getOffset();
+        Expression defaultValue = lead.getDefaultValue();
+        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newFollowingBoundary(offset));
+        window.getWindowSpec().setWindowFrame(requiredFrame);
+
+        // check if the class of lag's column matches defaultValue, and cast it
+        if (!TypeCoercionUtils.implicitCast(column.getDataType(), defaultValue.getDataType()).isPresent()) {
+            throw new AnalysisException("DefaultValue's Datatype of LEAD() can't match its relevant column. The column "
+                + "type is " + column.getDataType() + ", but the defaultValue type is " + defaultValue.getDataType());
+        }
+        lead.setDefaultValue(TypeCoercionUtils.castIfNotSameType(defaultValue, column.getDataType()));
+
+        // todo: should OrderKey be required?
+        return lead;
     }
 
+    /**
+     * [Referenced from class AnalyticExpr.standardize()]:
+     *
+     *    FIRST_VALUE without UNBOUNDED PRECEDING gets rewritten to use a different window
+     *    and change the function to return the last value. We either set the fn to be
+     *    'last_value' or 'first_value_rewrite', which simply wraps the 'last_value'
+     *    implementation but allows us to handle the first rows in a partition in a special
+     *    way in the backend. There are a few cases:
+     *     a) Start bound is X FOLLOWING or CURRENT ROW (X=0):
+     *        Use 'last_value' with a window where both bounds are X FOLLOWING (or
+     *        CURRENT ROW). Setting the start bound to X following is necessary because the
+     *        X rows at the end of a partition have no rows in their window. Note that X
+     *        FOLLOWING could be rewritten as lead(X) but that would not work for CURRENT
+     *        ROW.
+     *     b) Start bound is X PRECEDING and end bound is CURRENT ROW or FOLLOWING:
+     *        Use 'first_value_rewrite' and a window with an end bound X PRECEDING. An
+     *        extra parameter '-1' is added to indicate to the backend that NULLs should
+     *        not be added for the first X rows.
+     *     c) Start bound is X PRECEDING and end bound is Y PRECEDING:
+     *        Use 'first_value_rewrite' and a window with an end bound X PRECEDING. The
+     *        first Y rows in a partition have empty windows and should be NULL. An extra
+     *        parameter with the integer constant Y is added to indicate to the backend
+     *        that NULLs should be added for the first Y rows.
+     */
     @Override
-    public FirstValue visitFirstValue(FirstValue firstValue, CheckContext ctx) {
-        return null;
+    public FirstOrLastValue visitFirstValue(FirstValue firstValue, CheckContext ctx) {
+        Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
+        if (windowFrame.isPresent()) {
+            WindowFrame wf = windowFrame.get();
+            if (wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)
+                && wf.getLeftBoundary().isNot(FrameBoundType.PRECEDING)) {
+
+                wf.setRightBoundary(wf.getLeftBoundary());
+                LastValue lastValue = new LastValue(firstValue.child(0));
+                return lastValue;
+            }
+
+            if (wf.getLeftBoundary().is(FrameBoundType.UNBOUNDED_PRECEDING)
+                && wf.getRightBoundary().isNot(FrameBoundType.PRECEDING)) {
+                wf.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
+            }
+            window.getWindowSpec().setWindowFrame(wf);
+        } else {
+            window.getWindowSpec().setWindowFrame(new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
+        }
+        return firstValue;
     }
 
+
+    /**
+     * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
+     */
     @Override
     public Rank visitRank(Rank rank, CheckContext ctx) {
-        return null;
+        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
+
+        checkAndCompleteWindowFrame(window, requiredFrame, rank.getName());
+        return rank;
     }
 
+    /**
+     * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
+     */
     @Override
     public DenseRank visitDenseRank(DenseRank denseRank, CheckContext ctx) {
-        return null;
+        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
+
+        checkAndCompleteWindowFrame(window, requiredFrame, denseRank.getName());
+        return denseRank;
     }
 
+    /**
+     * check if the current WindowFrame equals with the required WindowFrame; if current WindowFrame is null,
+     * the requiredFrame should be used as current WindowFrame.
+     */
+    private void checkAndCompleteWindowFrame(Window window, WindowFrame requiredFrame, String functionName) {
+        window.getWindowSpec().getWindowFrame().ifPresent(wf -> {
+            if (!wf.equals(requiredFrame)) {
+                throw new AnalysisException("WindowFrame for " + functionName + "() must be null "
+                    + "or match with " + requiredFrame);
+            }
+        });
+        window.getWindowSpec().setWindowFrame(requiredFrame);
+    }
+
+    /** context for window function check specifically */
     public static class CheckContext {
 
     }

@@ -24,10 +24,13 @@ import org.apache.doris.nereids.types.DataType;
 
 import java.util.List;
 
-public class LastValue extends WindowFunction {
+/**
+ * Window function: Last_value()
+ */
+public class LastValue extends FirstOrLastValue {
 
-    public LastValue(String name, Expression... arguments) {
-        super(name, arguments);
+    public LastValue(Expression child) {
+        super("last_value", child);
     }
 
     @Override
@@ -36,7 +39,8 @@ public class LastValue extends WindowFunction {
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments, List<FunctionSignature> signatures) {
+    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
+                                             List<FunctionSignature> signatures) {
         return null;
     }
 
@@ -48,5 +52,10 @@ public class LastValue extends WindowFunction {
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitLastValue(this, context);
+    }
+
+    @Override
+    public DataType getDataType() {
+        return child(0).getDataType();
     }
 }

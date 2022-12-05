@@ -21,6 +21,7 @@ import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
+import org.apache.doris.nereids.types.IntegerType;
 
 import java.util.List;
 
@@ -52,5 +53,10 @@ public class Rank extends WindowFunction {
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitRank(this, context);
+    }
+
+    @Override
+    public DataType getDataType() {
+        return IntegerType.INSTANCE;
     }
 }

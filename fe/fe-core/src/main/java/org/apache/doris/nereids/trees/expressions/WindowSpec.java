@@ -50,6 +50,10 @@ public class WindowSpec extends Expression implements PropagateNullable {
         return orderKeyList;
     }
 
+    public void setOrderKeyList(List<OrderKey> orderKeyList) {
+        this.orderKeyList = Optional.ofNullable(orderKeyList);
+    }
+
     public Optional<WindowFrame> getWindowFrame() {
         return windowFrame;
     }
