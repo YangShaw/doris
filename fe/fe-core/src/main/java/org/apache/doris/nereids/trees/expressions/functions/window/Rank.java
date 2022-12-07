@@ -17,21 +17,24 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.shape.NullaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
+import org.apache.doris.nereids.types.coercion.AbstractDataType;
 
 import java.util.List;
 
 /**
  * Window function: Rank()
  */
-public class Rank extends WindowFunction {
+public class Rank extends WindowFunction implements NullaryExpression {
 
-    public Rank(String name, Expression... arguments) {
-        super(name, arguments);
+    public Rank() {
+        super("rank");
     }
 
     @Override
@@ -43,6 +46,16 @@ public class Rank extends WindowFunction {
     public FunctionSignature searchSignature(List<DataType> argumentTypes,
                                              List<Expression> arguments, List<FunctionSignature> signatures) {
         return null;
+    }
+
+    @Override
+    protected FunctionSignature computeSignature(FunctionSignature signature, List<Expression> arguments) {
+        return null;
+    }
+
+    @Override
+    public List<AbstractDataType> expectedInputTypes() {
+        return ImmutableList.of();
     }
 
     @Override

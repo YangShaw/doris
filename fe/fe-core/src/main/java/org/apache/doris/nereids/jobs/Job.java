@@ -159,7 +159,7 @@ public abstract class Job implements TracerSupplier {
             return defaultValue;
         }
         T cacheResult = statementContext.getOrRegisterCache(cacheName,
-                () -> variableSupplier.apply(connectContext.getSessionVariable()));
+            () -> variableSupplier.apply(connectContext.getSessionVariable()));
         return cacheResult;
     }
 }

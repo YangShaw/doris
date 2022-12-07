@@ -15,12 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.doris.nereids.rules.analysis;
+package org.apache.doris.nereids.rules.rewrite.logical;
 
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
+import org.apache.doris.nereids.rules.analysis.WindowFunctionChecker;
 import org.apache.doris.nereids.rules.rewrite.RewriteRuleFactory;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
@@ -82,7 +83,7 @@ public class ResolveWindowFunction implements RewriteRuleFactory {
 
                     List<Expression> expressionList = logicalSort.getOrderKeys().stream()
                             .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
-                    List<Window> windowList = extractWindowExpression(expressionList);
+                    List<NamedExpression> windowList = extractWindowExpression(expressionList);
 
                     LogicalAggregate<GroupPlan> logicalAggregate = ctx.root.child();
                     List<NamedExpression> outputExpressions = logicalAggregate.getOutputExpressions();
@@ -100,7 +101,7 @@ public class ResolveWindowFunction implements RewriteRuleFactory {
 
                     List<Expression> expressionList = logicalSort.getOrderKeys().stream()
                             .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
-                    List<Window> windowList = extractWindowExpression(expressionList);
+                    List<NamedExpression> windowList = extractWindowExpression(expressionList);
 
                     LogicalProject<GroupPlan> logicalProject = ctx.root.child();
                     List<NamedExpression> projects = logicalProject.getProjects();
@@ -113,20 +114,26 @@ public class ResolveWindowFunction implements RewriteRuleFactory {
                 })
             ),
             RuleType.WINDOW_FUNCTION_FROM_PROJECT.build(
-                logicalProject().thenApply(ctx -> {
-                    LogicalProject<GroupPlan> logicalProject = ctx.root;
-                    List<Window> windowList = extractWindowExpression(logicalProject.getProjects());
+                logicalProject().when(project -> containsWindowExpression(project.computeOutput())).then(logicalProject -> {
+                    List<NamedExpression> windowList = extractWindowExpression(logicalProject.getProjects());
+
+                    LogicalPlan root = logicalProject.child();
+                    // todo: remove windowFunction from projects?
+                    LogicalProject newLogicalProject = new LogicalProject(logicalProject.getProjects(),
+                            root);
 
                     if (windowList.isEmpty()) {
-                        return logicalProject;
+                        return newLogicalProject;
                     }
-                    return init(windowList, logicalProject);
+                    // return init(windowList, logicalProject);
+                    LogicalWindow logicalWindow = init(windowList, newLogicalProject);
+                    return logicalWindow;
                 })
             ),
             RuleType.WINDOW_FUNCTION_FROM_AGG.build(
                 logicalAggregate().thenApply(ctx -> {
                     LogicalAggregate<GroupPlan> logicalAggregate = ctx.root;
-                    List<Window> windowList = extractWindowExpression(logicalAggregate.getOutputExpressions());
+                    List<NamedExpression> windowList = extractWindowExpression(logicalAggregate.getOutputExpressions());
 
                     if (windowList.isEmpty()) {
                         return logicalAggregate;
@@ -140,7 +147,7 @@ public class ResolveWindowFunction implements RewriteRuleFactory {
                     List<Expression> expressionList = logicalSort.getOrderKeys().stream()
                             .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
 
-                    List<Window> windowList = extractWindowExpression(expressionList);
+                    List<NamedExpression> windowList = extractWindowExpression(expressionList);
 
                     if (windowList.isEmpty()) {
                         return logicalSort;
@@ -151,21 +158,39 @@ public class ResolveWindowFunction implements RewriteRuleFactory {
         );
     }
 
-    private <E extends Expression> List<Window> extractWindowExpression(List<E> expressionList) {
-        List<Window> windowList = expressionList.stream().filter(expression -> {
+     private <E extends Expression> boolean containsWindowExpression(List<E> expressionList) {
+        return expressionList.stream().anyMatch(expression ->
+            expression instanceof Alias && expression.child(0) instanceof Window
+        );
+     }
+
+    private <E extends Expression> List<NamedExpression> extractWindowExpression(List<E> expressionList) {
+        List<NamedExpression> windowList = expressionList.stream().filter(expression -> {
             if (expression instanceof Alias && expression.child(0) instanceof Window) {
                 return true;
             }
             return false;
-        }).map(expression -> (Window) expression.child(0)).collect(Collectors.toList());
+        }).map(expression -> (Alias) expression).collect(Collectors.toList());
         return windowList;
+    }
+
+    // just for test. Will be removed before merged
+    private LogicalWindow init(List<NamedExpression> windowList, LogicalPlan root) {
+        windowList.stream().forEach(windowAlias -> {
+            WindowFunctionChecker checker = new WindowFunctionChecker((Window)(windowAlias.child(0)));
+            checker.checkWindowFrameBeforeFunc();
+            checker.checkWindowFunction();
+            checker.checkWindowAfterFunc();
+        });
+
+        return new LogicalWindow(windowList, root);
     }
 
     /**
      *  main procedure
      * @param windowList all collected window functions
      */
-    private LogicalWindow init(List<Window> windowList, LogicalPlan root) {
+    private LogicalWindow initT(List<Window> windowList, LogicalPlan root) {
 
         windowList.stream().forEach(window -> {
             WindowFunctionChecker checker = new WindowFunctionChecker(window);

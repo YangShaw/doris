@@ -17,68 +17,93 @@
 
 package org.apache.doris.nereids.trees.plans.logical;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
+import org.apache.doris.nereids.util.Utils;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * logical node to deal with window functions
  */
 public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_TYPE> {
 
-    List<Window> windowExpressions;
-    List<Expression> partitionSpec;
-    List<OrderKey> orderSpec;
+    private List<NamedExpression> windowExpressions;
+    private List<Expression> partitionSpec;
+    private List<OrderKey> orderSpec;
 
-    public LogicalWindow(List<Window> windowExpressions, List<Expression> partitionSpec,
+    // just for test
+    public LogicalWindow(List<NamedExpression> windowExpressions, CHILD_TYPE child) {
+        this(windowExpressions, Optional.empty(), Optional.empty(), child);
+        this.partitionSpec = null;
+        this.orderSpec = null;
+    }
+
+    public LogicalWindow(List<NamedExpression> windowExpressions, List<Expression> partitionSpec,
                          List<OrderKey> orderSpec, CHILD_TYPE child) {
-        super(PlanType.LOGICAL_WINDOW, child);
-        this.windowExpressions = windowExpressions;
+        this(windowExpressions, Optional.empty(), Optional.empty(), child);
         this.partitionSpec = partitionSpec;
         this.orderSpec = orderSpec;
     }
 
-    public LogicalWindow(Optional<GroupExpression> groupExpression,
+    public LogicalWindow(List<NamedExpression> windowExpressions, Optional<GroupExpression> groupExpression,
                          Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
         super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
+        this.windowExpressions = windowExpressions;
     }
 
     @Override
     public Plan withChildren(List<Plan> children) {
-        return null;
-    }
-
-    @Override
-    public <R, C> R accept(PlanVisitor<R, C> visitor, C context) {
-        return null;
+        Preconditions.checkArgument(children.size() == 1);
+        return new LogicalWindow<>(windowExpressions, partitionSpec, orderSpec, children.get(0));
     }
 
     @Override
     public List<? extends Expression> getExpressions() {
-        return null;
+        return windowExpressions;
+    }
+
+    @Override
+    public String toString() {
+        return Utils.toSqlString("LogicalWindow",
+            "windowExpressions", windowExpressions,
+            "partitionSpec", partitionSpec,
+            "orderSpec", orderSpec
+        );
+    }
+
+    @Override
+    public <R, C> R accept(PlanVisitor<R, C> visitor, C context) {
+        return visitor.visitLogicalWindow(this, context);
     }
 
     @Override
     public Plan withGroupExpression(Optional<GroupExpression> groupExpression) {
-        return null;
+        return new LogicalWindow<>(windowExpressions, groupExpression, Optional.of(getLogicalProperties()), child());
     }
 
     @Override
     public Plan withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
-        return null;
+        return new LogicalWindow<>(windowExpressions, Optional.empty(), logicalProperties, child());
     }
 
     @Override
     public List<Slot> computeOutput() {
-        return null;
+        // todo: add partitions and orderkeys
+        return windowExpressions.stream()
+            .map(NamedExpression::toSlot)
+            .collect(ImmutableList.toImmutableList());
     }
 }

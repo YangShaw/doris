@@ -17,9 +17,7 @@
 
 package org.apache.doris.nereids.trees.expressions;
 
-import org.apache.doris.nereids.analyzer.UnboundFunction;
 import org.apache.doris.nereids.exceptions.UnboundException;
-import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.shape.UnaryExpression;
 import org.apache.doris.nereids.types.DataType;
@@ -29,35 +27,21 @@ import com.google.common.base.Preconditions;
 import java.util.List;
 
 /**
- * represents window function
+ * represents window function. WindowFunction of this window is saved as Window's child,
+ * which is an UnboundFunction at first and will be analyzed as relevant BoundFunction
+ * (may a WindowFunction or AggregateFunction) after BindFunction.
  */
 public class Window extends Expression implements UnaryExpression, PropagateNullable {
-
-    private UnboundFunction windowFunction;
-
-    private BoundFunction boundWindowFunction;
 
     private WindowSpec windowSpec;
 
     public Window(Expression windowFunction, WindowSpec windowSpec) {
         super(windowFunction);
-        //        this.windowFunction = windowFunction;
         this.windowSpec = windowSpec;
     }
 
-    //    public Window(BoundFunction boundFunction, WindowSpec windowSpec) {
-    //        super(boundFunction);
-    //        this.boundWindowFunction = boundFunction;
-    //        this.windowSpec = windowSpec;
-    //    }
-
     public Expression getWindowFunction() {
         return child();
-        //        return windowFunction;
-    }
-
-    public void setBoundWindowFunction(BoundFunction boundFunction) {
-        this.boundWindowFunction = boundFunction;
     }
 
     public WindowSpec getWindowSpec() {
@@ -77,12 +61,11 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
     @Override
     public Window withChildren(List<Expression> children) {
         Preconditions.checkArgument(children.size() == 1);
-        //        Expression windowFunction = children.get(0);
         return new Window(children.get(0), windowSpec);
     }
 
     @Override
     public DataType getDataType() throws UnboundException {
-        return child(0).getDataType();
+        return child().getDataType();
     }
 }

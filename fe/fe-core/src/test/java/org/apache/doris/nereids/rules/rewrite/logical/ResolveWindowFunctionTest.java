@@ -15,14 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.doris.nereids.util;
+package org.apache.doris.nereids.rules.rewrite.logical;
 
+import com.google.common.collect.ImmutableList;
+import org.apache.doris.nereids.trees.expressions.Alias;
+import org.apache.doris.nereids.trees.expressions.ExprId;
 import org.apache.doris.nereids.trees.expressions.NamedExpressionUtil;
+import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.WindowSpec;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
+import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
+import org.apache.doris.nereids.util.FieldChecker;
+import org.apache.doris.nereids.util.PatternMatchSupported;
+import org.apache.doris.nereids.util.PlanChecker;
 import org.apache.doris.utframe.TestWithFeService;
 
 import org.junit.jupiter.api.Test;
 
-public class AnalyticNodeTest extends TestWithFeService {
+import java.util.Optional;
+
+public class ResolveWindowFunctionTest extends TestWithFeService implements PatternMatchSupported {
 
     @Override
     protected void runBeforeAll() throws Exception {
@@ -51,6 +65,31 @@ public class AnalyticNodeTest extends TestWithFeService {
     @Override
     protected void runBeforeEach() throws Exception {
         NamedExpressionUtil.clear();
+    }
+
+    /* ********************************************************************************************
+     * Test WindowFrame and different WindowFunction
+     * ******************************************************************************************** */
+
+    @Test
+    public void testRank() {
+        String sql = "SELECT rank() over() FROM supplier";
+        WindowFrame windowFrame = new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newFollowingBoundary());
+        WindowSpec windowSpec = new WindowSpec(Optional.empty(), Optional.empty(),
+                Optional.of(windowFrame));
+
+        Window window = new Window(new Rank(), windowSpec);
+        Alias alias = new Alias(new ExprId(7), window, "rank() OVER()");
+        connectContext.getSessionVariable().setEnableNereidsPlanner(true);
+        connectContext.getSessionVariable().setEnableNereidsTrace(true);
+        PlanChecker.from(connectContext)
+                .analyze(sql)
+                .applyTopDown(new ExtractWindowExpression())
+                .matches(
+                    logicalWindow()
+                    .when(FieldChecker.check("windowExpressions", ImmutableList.of(alias)))
+                );
     }
 
     @Test

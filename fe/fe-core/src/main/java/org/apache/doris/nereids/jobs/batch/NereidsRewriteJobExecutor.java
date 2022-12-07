@@ -24,7 +24,8 @@ import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.analysis.AdjustAggregateNullableForEmptySet;
 import org.apache.doris.nereids.rules.analysis.CheckAfterRewrite;
 import org.apache.doris.nereids.rules.analysis.LogicalSubQueryAliasToLogicalProject;
-import org.apache.doris.nereids.rules.analysis.ResolveWindowFunction;
+import org.apache.doris.nereids.rules.rewrite.logical.ExtractWindowExpression;
+import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction;
 import org.apache.doris.nereids.rules.expression.rewrite.ExpressionNormalization;
 import org.apache.doris.nereids.rules.expression.rewrite.ExpressionOptimization;
 import org.apache.doris.nereids.rules.expression.rewrite.ExpressionRewrite;
@@ -89,6 +90,7 @@ public class NereidsRewriteJobExecutor extends BatchRulesJob {
                 .add(topDownBatch(ImmutableList.of(new ExpressionOptimization())))
                 .add(topDownBatch(ImmutableList.of(new ExtractSingleTableExpressionFromDisjunction())))
                 .add(topDownBatch(ImmutableList.of(new EliminateGroupByConstant())))
+                .add(topDownBatch(ImmutableList.of(new ExtractWindowExpression())))
                 .add(topDownBatch(ImmutableList.of(new ResolveWindowFunction())))
                 .add(topDownBatch(ImmutableList.of(new NormalizeAggregate())))
                 .add(topDownBatch(RuleSet.PUSH_DOWN_FILTERS, false))
