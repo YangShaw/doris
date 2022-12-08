@@ -24,6 +24,7 @@ import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.FunctionCallExpr;
 import org.apache.doris.analysis.GroupByClause.GroupingType;
 import org.apache.doris.analysis.GroupingInfo;
+import org.apache.doris.analysis.OrderByElement;
 import org.apache.doris.analysis.SlotDescriptor;
 import org.apache.doris.analysis.SlotId;
 import org.apache.doris.analysis.SlotRef;
@@ -612,7 +613,54 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
     @Override
     public PlanFragment visitPhysicalWindow(PhysicalWindow<? extends Plan> window, PlanTranslatorContext context) {
 
+        // variable in Nereids
+        List<NamedExpression> windowExpressions = window.getWindowExpressions();
+        List<Expression> partitionKeyList = window.getPartitionSpec();
+        List<OrderKey> orderKeyList = window.getOrderSpec();
+
+        // variable in old optimizer
+        // partition by clause
+        List<Expr> partitionExprs = Lists.newArrayList();
+        partitionExprs = partitionKeyList.stream()
+            .map(e -> ExpressionTranslator.translate(e, context))
+            .collect(Collectors.toList());
+
+        // order by clause
+        List<OrderByElement> orderByElements = Lists.newArrayList();
+        orderByElements = orderKeyList.stream()
+            .map(orderKey -> withOrderKeyInWindow(orderKey, context))
+            .collect(Collectors.toList());
+
+        // window frame clause
+        // Preconditions.checkArgument(windowFrame.isPresent());
+        // AnalyticWindow analyticWindow = withWindowFrame(windowFrame.get(), context);
+
+        // window function
+        // FunctionCallExpr fnCall = (FunctionCallExpr) windowFunction.accept(this, context);
+
+
+        // AnalyticEvalNode analyticEvalNode = new AnalyticEvalNode();
+        /**
+         * PlanNodeId id,
+         * PlanNode input,
+         * List<Expr> analyticFnCalls,
+         * List<Expr> partitionExprs,
+         * List<OrderByElement> orderByElements,
+         * AnalyticWindow analyticWindow,
+         * TupleDescriptor intermediateTupleDesc,
+         * TupleDescriptor outputTupleDesc,
+         * ExprSubstitutionMap logicalToPhysicalSmap,
+         * Expr partitionByEq,
+         * Expr orderByEq,
+         * TupleDescriptor bufferedTupleDesc
+         */
         return null;
+    }
+
+    // not sure whether it is correct to use visitOrderKey to resolve this case
+    private OrderByElement withOrderKeyInWindow(OrderKey orderKey, PlanTranslatorContext context) {
+        return new OrderByElement(ExpressionTranslator.translate(orderKey.getExpr(), context),
+                orderKey.isAsc(), orderKey.isNullFirst());
     }
 
     @Override

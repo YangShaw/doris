@@ -21,6 +21,7 @@ import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
+import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 
 import java.util.Objects;
@@ -28,7 +29,7 @@ import java.util.Objects;
 /**
  * window frame
  */
-public class WindowFrame extends Expression implements PropagateNullable {
+public class WindowFrame extends Expression implements PropagateNullable, LeafExpression {
 
     private FrameUnitsType frameUnits;
 
@@ -66,12 +67,6 @@ public class WindowFrame extends Expression implements PropagateNullable {
         this.rightBoundary = rightBoundary;
     }
 
-    // confirm that leftBoundary <= rightBoundary
-    // check1()
-
-    // confirm that offset of boundary > 0
-    // check2()
-
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -84,6 +79,11 @@ public class WindowFrame extends Expression implements PropagateNullable {
         return Objects.equals(this.frameUnits, other.frameUnits)
             && Objects.equals(this.leftBoundary, other.leftBoundary)
             && Objects.equals(this.rightBoundary, other.rightBoundary);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(frameUnits, leftBoundary, rightBoundary);
     }
 
     @Override

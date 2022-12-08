@@ -19,21 +19,32 @@ package org.apache.doris.nereids.trees.expressions;
 
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
+import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
  * window spec
  */
-public class WindowSpec extends Expression implements PropagateNullable {
+public class WindowSpec extends Expression implements PropagateNullable, LeafExpression {
 
     private Optional<List<Expression>> partitionKeyList;
 
     private Optional<List<OrderKey>> orderKeyList;
 
     private Optional<WindowFrame> windowFrame;
+
+    /** for test only*/
+    public WindowSpec() {
+        this(Optional.empty(), Optional.empty(), Optional.empty());
+    }
+
+    public WindowSpec(Optional<WindowFrame> windowFrame) {
+        this(Optional.empty(), Optional.empty(), windowFrame);
+    }
 
     public WindowSpec(Optional<List<Expression>> partitionList, Optional<List<OrderKey>> orderKeyList,
                       Optional<WindowFrame> windowFrame) {
@@ -60,6 +71,25 @@ public class WindowSpec extends Expression implements PropagateNullable {
 
     public void setWindowFrame(WindowFrame windowFrame) {
         this.windowFrame = Optional.of(windowFrame);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        WindowSpec that = (WindowSpec) o;
+        return Objects.equals(partitionKeyList, that.partitionKeyList)
+            && Objects.equals(orderKeyList, that.orderKeyList)
+            && Objects.equals(windowFrame, that.windowFrame);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(partitionKeyList, orderKeyList, windowFrame);
     }
 
     @Override

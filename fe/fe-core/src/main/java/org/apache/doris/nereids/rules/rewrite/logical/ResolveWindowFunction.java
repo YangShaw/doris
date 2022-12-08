@@ -22,8 +22,7 @@ import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.analysis.WindowFunctionChecker;
-import org.apache.doris.nereids.rules.rewrite.RewriteRuleFactory;
-import org.apache.doris.nereids.trees.expressions.Alias;
+import org.apache.doris.nereids.rules.rewrite.OneRewriteRuleFactory;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
@@ -33,13 +32,10 @@ import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundTyp
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
-import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
-import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.commons.collections.CollectionUtils;
 
@@ -64,126 +60,29 @@ import java.util.stream.Collectors;
  * *3 对于每个SortGroup，生成LogicalSort算子；
  * *4 对于SortGroup中的每个WindowGroup，生成LogicalWindow算子；
  */
-public class ResolveWindowFunction implements RewriteRuleFactory {
+public class ResolveWindowFunction extends OneRewriteRuleFactory {
 
-    /**
-     * Matched patterns:
-     * 1 LogicalSort -> LogicalAggregate
-     * 2 LogicalSort -> LogicalProject
-     * 3 LogicalProject
-     * 4 LogicalAggregate
-     * 5 LogicalSort
-     */
     @Override
-    public List<Rule> buildRules() {
-        return ImmutableList.of(
-            RuleType.WINDOW_FUNCTION_FROM_SORT_AGG.build(
-                logicalSort(logicalAggregate()).thenApply(ctx -> {
-                    LogicalSort<LogicalAggregate<GroupPlan>> logicalSort = ctx.root;
+    public Rule build() {
+        return RuleType.RESOLVE_WINDOW_FUNCTION.build(
+            logicalWindow().whenNot(LogicalWindow::isResolved).then(logicalWindow -> {
 
-                    List<Expression> expressionList = logicalSort.getOrderKeys().stream()
-                            .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
-                    List<NamedExpression> windowList = extractWindowExpression(expressionList);
-
-                    LogicalAggregate<GroupPlan> logicalAggregate = ctx.root.child();
-                    List<NamedExpression> outputExpressions = logicalAggregate.getOutputExpressions();
-                    windowList.addAll(extractWindowExpression(outputExpressions));
-
-                    if (windowList.isEmpty()) {
-                        return logicalSort;
-                    }
-                    return init(windowList, logicalSort);
-                })
-            ),
-            RuleType.WINDOW_FUNCTION_FROM_SORT_PROJECT.build(
-                logicalSort(logicalProject()).thenApply(ctx -> {
-                    LogicalSort<LogicalProject<GroupPlan>> logicalSort = ctx.root;
-
-                    List<Expression> expressionList = logicalSort.getOrderKeys().stream()
-                            .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
-                    List<NamedExpression> windowList = extractWindowExpression(expressionList);
-
-                    LogicalProject<GroupPlan> logicalProject = ctx.root.child();
-                    List<NamedExpression> projects = logicalProject.getProjects();
-                    windowList.addAll(extractWindowExpression(projects));
-
-                    if (windowList.isEmpty()) {
-                        return logicalProject;
-                    }
-                    return init(windowList, logicalProject);
-                })
-            ),
-            RuleType.WINDOW_FUNCTION_FROM_PROJECT.build(
-                logicalProject().when(project -> containsWindowExpression(project.computeOutput())).then(logicalProject -> {
-                    List<NamedExpression> windowList = extractWindowExpression(logicalProject.getProjects());
-
-                    LogicalPlan root = logicalProject.child();
-                    // todo: remove windowFunction from projects?
-                    LogicalProject newLogicalProject = new LogicalProject(logicalProject.getProjects(),
-                            root);
-
-                    if (windowList.isEmpty()) {
-                        return newLogicalProject;
-                    }
-                    // return init(windowList, logicalProject);
-                    LogicalWindow logicalWindow = init(windowList, newLogicalProject);
-                    return logicalWindow;
-                })
-            ),
-            RuleType.WINDOW_FUNCTION_FROM_AGG.build(
-                logicalAggregate().thenApply(ctx -> {
-                    LogicalAggregate<GroupPlan> logicalAggregate = ctx.root;
-                    List<NamedExpression> windowList = extractWindowExpression(logicalAggregate.getOutputExpressions());
-
-                    if (windowList.isEmpty()) {
-                        return logicalAggregate;
-                    }
-                    return init(windowList, logicalAggregate);
-                })
-            ),
-            RuleType.WINDOW_FUNCTION_FROM_SORT.build(
-                logicalSort().thenApply(ctx -> {
-                    LogicalSort<GroupPlan> logicalSort = ctx.root;
-                    List<Expression> expressionList = logicalSort.getOrderKeys().stream()
-                            .map(orderKey -> orderKey.getExpr()).collect(Collectors.toList());
-
-                    List<NamedExpression> windowList = extractWindowExpression(expressionList);
-
-                    if (windowList.isEmpty()) {
-                        return logicalSort;
-                    }
-                    return init(windowList, logicalSort);
-                })
-            )
+                return init(logicalWindow);
+            })
         );
-    }
-
-     private <E extends Expression> boolean containsWindowExpression(List<E> expressionList) {
-        return expressionList.stream().anyMatch(expression ->
-            expression instanceof Alias && expression.child(0) instanceof Window
-        );
-     }
-
-    private <E extends Expression> List<NamedExpression> extractWindowExpression(List<E> expressionList) {
-        List<NamedExpression> windowList = expressionList.stream().filter(expression -> {
-            if (expression instanceof Alias && expression.child(0) instanceof Window) {
-                return true;
-            }
-            return false;
-        }).map(expression -> (Alias) expression).collect(Collectors.toList());
-        return windowList;
     }
 
     // just for test. Will be removed before merged
-    private LogicalWindow init(List<NamedExpression> windowList, LogicalPlan root) {
+    private LogicalWindow init(LogicalWindow<GroupPlan> logicalWindow) {
+        List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
         windowList.stream().forEach(windowAlias -> {
-            WindowFunctionChecker checker = new WindowFunctionChecker((Window)(windowAlias.child(0)));
+            WindowFunctionChecker checker = new WindowFunctionChecker((Window) (windowAlias.child(0)));
             checker.checkWindowFrameBeforeFunc();
             checker.checkWindowFunction();
             checker.checkWindowAfterFunc();
         });
 
-        return new LogicalWindow(windowList, root);
+        return new LogicalWindow(windowList, logicalWindow.child());
     }
 
     /**
@@ -325,8 +224,8 @@ public class ResolveWindowFunction implements RewriteRuleFactory {
     }
 
     private LogicalWindow createLogicalWindow(LogicalPlan root, WindowFrameGroup windowFrameGroup) {
-        LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup.groupList,
-                windowFrameGroup.partitionKeyList, windowFrameGroup.orderKeyList, root);
+        LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup.groupList, root,
+                windowFrameGroup.partitionKeyList, windowFrameGroup.orderKeyList);
         return logicalWindow;
     }
 

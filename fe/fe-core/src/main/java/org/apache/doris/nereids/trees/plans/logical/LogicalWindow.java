@@ -17,23 +17,22 @@
 
 package org.apache.doris.nereids.trees.plans.logical;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
-import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
 import org.apache.doris.nereids.util.Utils;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * logical node to deal with window functions
@@ -43,16 +42,15 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
     private List<NamedExpression> windowExpressions;
     private List<Expression> partitionSpec;
     private List<OrderKey> orderSpec;
+    private boolean resolved = false;
 
     // just for test
     public LogicalWindow(List<NamedExpression> windowExpressions, CHILD_TYPE child) {
-        this(windowExpressions, Optional.empty(), Optional.empty(), child);
-        this.partitionSpec = null;
-        this.orderSpec = null;
+        this(windowExpressions, child, null, null);
     }
 
-    public LogicalWindow(List<NamedExpression> windowExpressions, List<Expression> partitionSpec,
-                         List<OrderKey> orderSpec, CHILD_TYPE child) {
+    public LogicalWindow(List<NamedExpression> windowExpressions, CHILD_TYPE child, List<Expression> partitionSpec,
+                         List<OrderKey> orderSpec) {
         this(windowExpressions, Optional.empty(), Optional.empty(), child);
         this.partitionSpec = partitionSpec;
         this.orderSpec = orderSpec;
@@ -64,10 +62,26 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         this.windowExpressions = windowExpressions;
     }
 
+    public boolean isResolved() {
+        return resolved;
+    }
+
+    public List<NamedExpression> getWindowExpressions() {
+        return windowExpressions;
+    }
+
+    public List<Expression> getPartitionSpec() {
+        return partitionSpec;
+    }
+
+    public List<OrderKey> getOrderSpec() {
+        return orderSpec;
+    }
+
     @Override
     public Plan withChildren(List<Plan> children) {
         Preconditions.checkArgument(children.size() == 1);
-        return new LogicalWindow<>(windowExpressions, partitionSpec, orderSpec, children.get(0));
+        return new LogicalWindow<>(windowExpressions, children.get(0), partitionSpec, orderSpec);
     }
 
     @Override

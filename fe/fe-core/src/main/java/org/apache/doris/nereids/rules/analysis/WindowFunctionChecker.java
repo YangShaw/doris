@@ -134,7 +134,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         //        }
 
         // case 0
-        if (window.getWindowSpec().getOrderKeyList().isPresent()) {
+        if (!window.getWindowSpec().getOrderKeyList().isPresent()) {
             throw new AnalysisException("WindowFrame clause requires OrderBy clause");
         }
 
@@ -234,23 +234,6 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
     }
 
     /**
-     * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
-     *
-     * (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
-     */
-    @Override
-    public RowNumber visitRowNumber(RowNumber rowNumber, CheckContext ctx) {
-        // check and complete window frame
-        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
-                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
-
-        checkAndCompleteWindowFrame(window, requiredFrame, rowNumber.getName());
-
-        // todo: should OrderKey be required?
-        return rowNumber;
-    }
-
-    /**
      * required WindowFrame: (UNBOUNDED PRECEDING, offset PRECEDING)
      * but in Spark, it is (offset PRECEDING, offset PRECEDING)
      */
@@ -340,7 +323,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
                     && wf.getLeftBoundary().isNot(FrameBoundType.PRECEDING)) {
 
                 wf.setRightBoundary(wf.getLeftBoundary());
-                LastValue lastValue = new LastValue(firstValue.child(0));
+                LastValue lastValue = new LastValue(firstValue.child());
                 return lastValue;
             }
 
@@ -349,10 +332,12 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
                 wf.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
             }
             window.getWindowSpec().setWindowFrame(wf);
+
         } else {
             window.getWindowSpec().setWindowFrame(new WindowFrame(FrameUnitsType.ROWS,
                     FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
         }
+
         return firstValue;
     }
 
@@ -379,6 +364,23 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
 
         checkAndCompleteWindowFrame(window, requiredFrame, denseRank.getName());
         return denseRank;
+    }
+
+    /**
+     * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
+     *
+     * (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
+     */
+    @Override
+    public RowNumber visitRowNumber(RowNumber rowNumber, CheckContext ctx) {
+        // check and complete window frame
+        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
+
+        checkAndCompleteWindowFrame(window, requiredFrame, rowNumber.getName());
+
+        // todo: should OrderKey be required?
+        return rowNumber;
     }
 
     /**

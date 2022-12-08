@@ -58,11 +58,6 @@ public interface Plan extends TreeNode<Plan> {
     }
 
     default boolean hasUnboundExpression() {
-        for (Expression expression : getExpressions()) {
-            if (expression.hasUnbound()) {
-                System.out.println(expression);
-            }
-        }
         return getExpressions().stream().anyMatch(Expression::hasUnbound);
     }
 

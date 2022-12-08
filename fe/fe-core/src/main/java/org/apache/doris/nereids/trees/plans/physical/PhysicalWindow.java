@@ -19,8 +19,10 @@ package org.apache.doris.nereids.trees.plans.physical;
 
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
+import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.properties.PhysicalProperties;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
@@ -34,8 +36,34 @@ import java.util.Optional;
  */
 public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD_TYPE> {
 
-    public PhysicalWindow(LogicalProperties logicalProperties, CHILD_TYPE child) {
-        super(PlanType.PHYSICAL_WINDOW, logicalProperties, child);
+    private List<NamedExpression> windowExpressions;
+    private List<Expression> partitionSpec;
+    private List<OrderKey> orderSpec;
+
+    public PhysicalWindow(List<NamedExpression> windowExpressions, List<Expression> partitionSpec,
+                          List<OrderKey> orderSpec, LogicalProperties logicalProperties, CHILD_TYPE child) {
+        this(windowExpressions, partitionSpec, orderSpec, Optional.empty(), logicalProperties, child);
+    }
+
+    public PhysicalWindow(List<NamedExpression> windowExpressions, List<Expression> partitionSpec,
+                          List<OrderKey> orderSpec, Optional<GroupExpression> groupExpression,
+                          LogicalProperties logicalProperties, CHILD_TYPE child) {
+        super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, child);
+        this.windowExpressions = windowExpressions;
+        this.partitionSpec = partitionSpec;
+        this.orderSpec = orderSpec;
+    }
+
+    public List<NamedExpression> getWindowExpressions() {
+        return windowExpressions;
+    }
+
+    public List<Expression> getPartitionSpec() {
+        return partitionSpec;
+    }
+
+    public List<OrderKey> getOrderSpec() {
+        return orderSpec;
     }
 
     @Override

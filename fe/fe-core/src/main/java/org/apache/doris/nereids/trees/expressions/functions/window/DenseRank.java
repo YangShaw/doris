@@ -23,6 +23,9 @@ import org.apache.doris.nereids.trees.expressions.shape.NullaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
+import org.apache.doris.nereids.types.coercion.AbstractDataType;
+
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 
@@ -31,8 +34,8 @@ import java.util.List;
  */
 public class DenseRank extends WindowFunction implements NullaryExpression {
 
-    public DenseRank(String name, Expression... arguments) {
-        super(name, arguments);
+    public DenseRank() {
+        super("dense_rank");
     }
 
     @Override
@@ -44,6 +47,16 @@ public class DenseRank extends WindowFunction implements NullaryExpression {
     public FunctionSignature searchSignature(List<DataType> argumentTypes,
                                              List<Expression> arguments, List<FunctionSignature> signatures) {
         return null;
+    }
+
+    @Override
+    protected FunctionSignature computeSignature(FunctionSignature signature, List<Expression> arguments) {
+        return null;
+    }
+
+    @Override
+    public List<AbstractDataType> expectedInputTypes() {
+        return ImmutableList.of();
     }
 
     @Override

@@ -64,7 +64,6 @@ import java.util.Objects;
  */
 public class AnalyticExpr extends Expr {
     private static final Logger LOG = LoggerFactory.getLogger(AnalyticExpr.class);
-    private static String NTILE = "NTILE";
 
     private FunctionCallExpr fnCall;
     private final List<Expr> partitionExprs;
@@ -81,6 +80,7 @@ public class AnalyticExpr extends Expr {
     // SQL string of this AnalyticExpr before standardization. Returned in toSqlImpl().
     private String sqlString;
 
+    private static String NTILE = "NTILE";
     private static String LEAD = "LEAD";
     private static String LAG = "LAG";
     private static String FIRSTVALUE = "FIRST_VALUE";

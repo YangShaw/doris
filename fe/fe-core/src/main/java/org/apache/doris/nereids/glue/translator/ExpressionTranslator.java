@@ -17,6 +17,8 @@
 
 package org.apache.doris.nereids.glue.translator;
 
+import org.apache.doris.analysis.AnalyticExpr;
+import org.apache.doris.analysis.AnalyticWindow;
 import org.apache.doris.analysis.ArithmeticExpr;
 import org.apache.doris.analysis.AssertNumRowsElement.Assertion;
 import org.apache.doris.analysis.BinaryPredicate;
@@ -40,6 +42,7 @@ import org.apache.doris.catalog.Function.NullableMode;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.trees.expressions.AggregateExpression;
+import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.And;
 import org.apache.doris.nereids.trees.expressions.AssertNumRowsElement;
@@ -68,6 +71,8 @@ import org.apache.doris.nereids.trees.expressions.TimestampArithmetic;
 import org.apache.doris.nereids.trees.expressions.UnaryArithmetic;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
+import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateParam;
@@ -80,15 +85,21 @@ import org.apache.doris.nereids.trees.expressions.literal.DateLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.DateTimeLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.DateTimeV2Literal;
 import org.apache.doris.nereids.trees.expressions.literal.DateV2Literal;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
+import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
+import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
 import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.literal.NullLiteral;
 import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionVisitor;
 import org.apache.doris.nereids.types.coercion.AbstractDataType;
 import org.apache.doris.thrift.TFunctionBinaryType;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -293,13 +304,108 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     @Override
     public Expr visitInPredicate(InPredicate inPredicate, PlanTranslatorContext context) {
         List<Expr> inList = inPredicate.getOptions().stream()
-                .map(e -> translate(e, context))
+                .map(e -> e.accept(this, context))
                 .collect(Collectors.toList());
         return new org.apache.doris.analysis.InPredicate(inPredicate.getCompareExpr().accept(this, context),
                 inList,
                 false);
     }
 
+    @Override
+    public Expr visitWindow(Window window, PlanTranslatorContext context) {
+        // variable in Nereids
+        Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
+        Optional<List<Expression>> partitionKeyList = window.getWindowSpec().getPartitionKeyList();
+        Optional<List<OrderKey>> orderKeyList = window.getWindowSpec().getOrderKeyList();
+        Expression windowFunction = window.getWindowFunction();
+
+        // variable in old optimizer
+        // partition by clause
+        List<Expr> partitionExprs = Lists.newArrayList();
+        if (partitionKeyList.isPresent()) {
+            partitionExprs = partitionKeyList.get().stream()
+                .map(e -> e.accept(this, context))
+                .collect(Collectors.toList());
+        }
+
+        // order by clause
+        List<OrderByElement> orderByElements = Lists.newArrayList();
+        if (orderKeyList.isPresent()) {
+            orderByElements = orderKeyList.get().stream()
+                .map(orderKey -> withOrderKeyInWindow(orderKey, context))
+                .collect(Collectors.toList());
+        }
+
+        // window frame clause
+        Preconditions.checkArgument(windowFrame.isPresent());
+        AnalyticWindow analyticWindow = withWindowFrame(windowFrame.get(), context);
+
+        // window function
+        FunctionCallExpr fnCall = (FunctionCallExpr) windowFunction.accept(this, context);
+
+        // return AnalyticExpr
+        return new AnalyticExpr(fnCall, partitionExprs, orderByElements, analyticWindow);
+    }
+
+    // not sure whether it is correct to use visitOrderKey to resolve this case
+    public OrderByElement withOrderKeyInWindow(OrderKey orderKey, PlanTranslatorContext context) {
+        return new OrderByElement(translate(orderKey.getExpr(), context), orderKey.isAsc(), orderKey.isNullFirst());
+    }
+
+    public AnalyticWindow withWindowFrame(WindowFrame windowFrame, PlanTranslatorContext context) {
+
+        FrameUnitsType frameUnits = windowFrame.getFrameUnits();
+        FrameBoundary leftBoundary = windowFrame.getLeftBoundary();
+        FrameBoundary rightBoundary = windowFrame.getRightBoundary();
+
+        AnalyticWindow.Type type = frameUnits == FrameUnitsType.ROWS
+                ? AnalyticWindow.Type.ROWS : AnalyticWindow.Type.RANGE;
+
+        AnalyticWindow.Boundary left = withFrameBoundary(leftBoundary, context);
+        AnalyticWindow.Boundary right = withFrameBoundary(rightBoundary, context);
+
+        return new AnalyticWindow(type, left, right);
+    }
+
+    private AnalyticWindow.Boundary withFrameBoundary(FrameBoundary boundary, PlanTranslatorContext context) {
+        FrameBoundType boundType = boundary.getFrameBoundType();
+        BigDecimal offsetValue = null;
+        Expr e = null;
+        if (boundary.hasOffset()) {
+            Expression boundOffset = boundary.getBoundOffset().get();
+            e = translate(boundOffset, context);
+            offsetValue = new BigDecimal(((Literal) boundOffset).getDouble());
+        }
+
+        switch (boundType) {
+            case UNBOUNDED_PRECEDING:
+                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.UNBOUNDED_PRECEDING, null);
+            case UNBOUNDED_FOLLOWING:
+                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.UNBOUNDED_FOLLOWING, null);
+            case CURRENT_ROW:
+                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.CURRENT_ROW, null);
+            case PRECEDING:
+                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.PRECEDING, e, offsetValue);
+            case FOLLOWING:
+                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.FOLLOWING, e, offsetValue);
+            default:
+                throw new AnalysisException("This WindowFrame hasn't be resolved in REWRITE");
+        }
+    }
+
+    @Override
+    public Expr visitWindowFunction(WindowFunction function, PlanTranslatorContext context) {
+        List<Expr> catalogArguments = function.getArguments()
+                .stream()
+                .map(arg -> arg.accept(this, context))
+                .collect(ImmutableList.toImmutableList());
+
+        FunctionParams windowFnParams;
+
+        return null;
+    }
+
+    // TODO: Supports for `distinct`
     @Override
     public Expr visitScalarFunction(ScalarFunction function, PlanTranslatorContext context) {
         List<Expression> nereidsArguments = adaptFunctionArgumentsForBackends(function);

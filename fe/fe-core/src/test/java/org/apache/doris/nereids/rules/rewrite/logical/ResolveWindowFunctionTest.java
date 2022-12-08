@@ -17,26 +17,32 @@
 
 package org.apache.doris.nereids.rules.rewrite.logical;
 
-import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.ExprId;
 import org.apache.doris.nereids.trees.expressions.NamedExpressionUtil;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.WindowSpec;
+import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
+import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
+import org.apache.doris.nereids.trees.expressions.functions.window.RowNumber;
 import org.apache.doris.nereids.util.FieldChecker;
 import org.apache.doris.nereids.util.PatternMatchSupported;
 import org.apache.doris.nereids.util.PlanChecker;
 import org.apache.doris.utframe.TestWithFeService;
 
+import com.google.common.collect.ImmutableList;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 public class ResolveWindowFunctionTest extends TestWithFeService implements PatternMatchSupported {
+
+    public final String unifiedAlias = "uni";
 
     @Override
     protected void runBeforeAll() throws Exception {
@@ -72,15 +78,42 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
      * ******************************************************************************************** */
 
     @Test
-    public void testRank() {
-        String sql = "SELECT rank() over() FROM supplier";
+    public void testRankLikeFunctions() {
+        String rank = "SELECT rank() over() as uni FROM supplier";
+        String rank2 = "SELECT rank() over(ROWS BETWEEN unbounded preceding and current row) as uni FROM supplier";
+        String denseRank = "SELECT dense_rank() over() as uni FROM supplier";
+        String rowNumber = "SELECT row_number() over() as uni FROM supplier";
+        List<String> sqls = ImmutableList.of(
+                rank, rank2, denseRank, rowNumber
+        );
+        List<BoundFunction> functions = ImmutableList.of(
+            new Rank(), new Rank(), new DenseRank(), new RowNumber()
+        );
+
         WindowFrame windowFrame = new WindowFrame(FrameUnitsType.ROWS,
-                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newFollowingBoundary());
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
         WindowSpec windowSpec = new WindowSpec(Optional.empty(), Optional.empty(),
                 Optional.of(windowFrame));
 
-        Window window = new Window(new Rank(), windowSpec);
-        Alias alias = new Alias(new ExprId(7), window, "rank() OVER()");
+        for (int i = 0; i < sqls.size(); i++) {
+            Window window = new Window(functions.get(i), windowSpec);
+            Alias alias = new Alias(new ExprId(7), window, unifiedAlias);
+
+            System.out.println(functions.get(i).toSql() + " " + functions.get(i).toString());
+            System.out.println(window.toSql());
+
+            PlanChecker.from(connectContext)
+                    .analyze(sqls.get(i))
+                    .applyTopDown(new ExtractWindowExpression())
+                    .applyTopDown(new ResolveWindowFunction())
+                    .matches(
+                        logicalWindow()
+                            .when(FieldChecker.check("windowExpressions", ImmutableList.of(alias)))
+                    );
+        }
+
+        /*Window window = new Window(new Rank(), windowSpec);
+        Alias alias = new Alias(new ExprId(7), window, new Window(new Rank()).toSql());
         connectContext.getSessionVariable().setEnableNereidsPlanner(true);
         connectContext.getSessionVariable().setEnableNereidsTrace(true);
         PlanChecker.from(connectContext)
@@ -89,7 +122,13 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
                 .matches(
                     logicalWindow()
                     .when(FieldChecker.check("windowExpressions", ImmutableList.of(alias)))
-                );
+                );*/
+    }
+
+    @Test
+    public void testFirstOrLastValue() {
+        // String first_value = "SELECT first_value() over() FROM supplier";
+        // String first_value2 = "SELECT first_value(s_suppkey) over(ORDER BY s_suppkey ROWS BETWEEN 3 following and unbounded following) FROM supplier";
     }
 
     @Test

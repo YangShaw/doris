@@ -17,8 +17,6 @@
 
 package org.apache.doris.nereids.rules.rewrite.logical;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.RewriteRuleFactory;
@@ -26,18 +24,29 @@ import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
-import org.apache.doris.nereids.trees.plans.GroupPlan;
-import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
-import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * extract window expressions from LogicalProject, LogicalSort, LogicalAggregate
+ */
 public class ExtractWindowExpression implements RewriteRuleFactory {
 
+    /**
+     * Matched patterns:
+     * 1 LogicalSort -> LogicalAggregate
+     * 2 LogicalSort -> LogicalProject
+     * 3 LogicalProject
+     * 4 LogicalAggregate
+     * 5 LogicalSort
+     */
     @Override
     public List<Rule> buildRules() {
         return ImmutableList.of(
@@ -95,6 +104,7 @@ public class ExtractWindowExpression implements RewriteRuleFactory {
         );
     }
 
+    // todo: 增加对LogicalAgg和LogicalSort的支持；这里只是LogicalProject算子；
     private <E extends Expression> LogicalPlan extractWindowExpression(LogicalPlan root, List<E> expressionList) {
         List<NamedExpression> windowList = Lists.newArrayList();
         List<E> remainedExpressionList = Lists.newArrayList();
@@ -105,12 +115,11 @@ public class ExtractWindowExpression implements RewriteRuleFactory {
         if (windowList.isEmpty()) {
             return newLogicalProject;
         }
-        // return init(windowList, logicalProject);
         return new LogicalWindow(windowList, newLogicalProject);
     }
 
-    private <E extends Expression> void extractWindowExpression(List<NamedExpression> windowList,
-                                                                List<E> remainedExpressionList, List<E> expressionList) {
+    private <E extends Expression> void extractWindowExpression(
+            List<NamedExpression> windowList, List<E> remainedExpressionList, List<E> expressionList) {
 
         expressionList.forEach(expression -> {
             if (expression instanceof Alias && expression.child(0) instanceof Window) {
@@ -121,11 +130,9 @@ public class ExtractWindowExpression implements RewriteRuleFactory {
         });
     }
 
-
-
     private <E extends Expression> boolean containsWindowExpression(List<E> expressionList) {
         return expressionList.stream().anyMatch(expression ->
-            expression instanceof NamedExpression && expression.child(0) instanceof Window
+            expression instanceof Alias && expression.child(0) instanceof Window
         );
     }
 

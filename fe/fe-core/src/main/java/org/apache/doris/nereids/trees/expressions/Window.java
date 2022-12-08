@@ -25,6 +25,7 @@ import org.apache.doris.nereids.types.DataType;
 import com.google.common.base.Preconditions;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * represents window function. WindowFunction of this window is saved as Window's child,
@@ -34,6 +35,11 @@ import java.util.List;
 public class Window extends Expression implements UnaryExpression, PropagateNullable {
 
     private WindowSpec windowSpec;
+
+    /** for test only*/
+    public Window(Expression windowFunction) {
+        this(windowFunction, new WindowSpec());
+    }
 
     public Window(Expression windowFunction, WindowSpec windowSpec) {
         super(windowFunction);
@@ -46,6 +52,24 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
 
     public WindowSpec getWindowSpec() {
         return windowSpec;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        Window that = (Window) o;
+        return Objects.equals(windowSpec, that.windowSpec)
+            && Objects.equals(getWindowFunction(), that.getWindowFunction());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(windowSpec, getWindowFunction());
     }
 
     @Override
