@@ -42,6 +42,8 @@ import org.apache.commons.collections.CollectionUtils;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * 目标：创建逻辑节点，来维护窗口函数相关的信息。窗口函数对排序有要求，因此也需要增加Sort相关的算子；
@@ -89,8 +91,9 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
      *  main procedure
      * @param windowList all collected window functions
      */
-    private LogicalWindow initT(List<Window> windowList, LogicalPlan root) {
+    private LogicalWindow initT(List<Window> windowList, LogicalWindow<LogicalPlan> root) {
 
+        // check
         windowList.stream().forEach(window -> {
             WindowFunctionChecker checker = new WindowFunctionChecker(window);
             checker.checkWindowFrameBeforeFunc();
@@ -100,86 +103,32 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
 
         // create AnalyticInfo
 
-        // 对于包含AnalyticInfo的selectStmt，生成相应的处理窗口的算子
 
-        // check windowFrame
-        // windowList.stream().forEach(window -> checkWindowFrame(window));
 
-        // 删掉LogicalProject中的window expr，或在后续的rewrite中消除
-
-        // 创建windowGroup
+        /////////// create three kinds of groups
+        // windowFrameGroup
         List<WindowFrameGroup> windowFrameGroupList = createCommonWindowFrameGroups(windowList);
-        // todo: init()?
-        List<OrderKeyGroup> orderKeyGroupList = createCommonOrderKeyGroups(windowFrameGroupList);
-        // init(), merge()
-        List<PartitionKeyGroup> partitionKeyGroupList = createCommonPartitionKeyGroups(orderKeyGroupList);
-        // init(), merge(), order()
+        // todo: init()? -> init() just add some physical slot size infos; no need in current context
 
-        LogicalPlan newRoot = root;
+        List<OrderKeyGroup> orderKeyGroupList = createCommonOrderKeyGroups(windowFrameGroupList);
+        mergeOrderKeyGroups(orderKeyGroupList);
+
+        List<PartitionKeyGroup> partitionKeyGroupList = createCommonPartitionKeyGroups(orderKeyGroupList);
+        // todo: merge(), order(); order() need the physical slot size; we can use DataType.width() as alternative
+
+        // eliminate LogicalWindow, and replaced it with new LogicalWindow and LogicalSort
+        LogicalPlan newRoot = root.child();
         for (PartitionKeyGroup partitionKeyGroup : partitionKeyGroupList) {
             for (OrderKeyGroup orderKeyGroup : partitionKeyGroup.groupList) {
-                // 为每个OrderKeyGroup创建相应的算子，它是创建Sort算子的单位；
+                // create LogicalSort for each OrderKeyGroup;
+                // in OrderKeyGroup, create LogicalWindow for each WindowFrameGroup
                 newRoot = createLogicalPlanNodeForWindowFunctions(newRoot, orderKeyGroup);
             }
         }
         return (LogicalWindow) newRoot;
     }
 
-    /* ********************************************************************************************
-     * WindowFrame check and standardization
-     * ******************************************************************************************** */
 
-    /**
-     * Window frame 补全和检查逻辑：
-     *
-     * 无window frame：
-     * - rank类，up - cr
-     * - 聚合类，up - uf
-     * -
-     */
-    private void checkWindowFrame(Window window) {
-        WindowSpec windowSpec = window.getWindowSpec();
-        if (window.getWindowSpec().getWindowFrame().isPresent()) {
-            // WindowFrame windowFrame = window.getWindowSpec().getWindowFrame().get();
-
-            // windowFrame must be with orderKey clause
-            if (!windowSpec.getOrderKeyList().isPresent()) {
-                throw new AnalysisException("WindowFrame in any window function must be used with order by clause");
-            }
-
-            // windowFrame's check and complete, including offset validation
-
-            //
-        }
-
-        if (!window.getWindowSpec().getWindowFrame().isPresent()) {
-            // todo: 根据不同聚合函数来定义不同的frame
-            WindowFrame windowFrame = new WindowFrame(FrameUnitsType.ROWS,
-                    FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
-            window.getWindowSpec().setWindowFrame(windowFrame);
-        }
-
-        window.getWindowSpec().getWindowFrame().ifPresent(windowFrame -> resolveFrameBoundary(windowFrame));
-    }
-
-    /**
-     * if windowFrame's rightBoundary, we should complete it
-     */
-    private void resolveFrameBoundary(WindowFrame windowFrame) {
-        if (windowFrame.getRightBoundary() != null) {
-            return;
-        }
-
-        // "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
-        if (windowFrame.getLeftBoundary().getFrameBoundType().isFollowing()) {
-            throw new AnalysisException("");
-        }
-
-        // "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
-        // "over( rows|range [UNBOUNDED] PRECEDING)"
-        //   equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
-        windowFrame.setRightBoundary(new FrameBoundary(Optional.empty(), FrameBoundType.CURRENT_ROW));
-    }
 
     /* ********************************************************************************************
      * create LogicalWindow and LogicalSort
@@ -201,11 +150,16 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
     private LogicalPlan createLogicalSortNode(LogicalPlan root, OrderKeyGroup orderKeyGroup) {
         // all keys that need to be sorted, which includes BOTH partitionKeys and orderKeys from this group
         List<OrderKey> keysNeedToBeSortedList = Lists.newArrayList();
+
+        // todo: used as SortNode.isAnalyticSort, but we haven't add it in LogicalSort
+        boolean isAnalyticSort = false;
         if (!orderKeyGroup.partitionKeyList.isEmpty()) {
             keysNeedToBeSortedList.addAll(orderKeyGroup.partitionKeyList.stream().map(partitionKey -> {
-                // todo: haven't support isNullFirst, and its default value is true(see LogicalPlanBuilder)
-                return new OrderKey(partitionKey, true, true);
+                // todo: haven't support isNullFirst, and its default value is false(see AnalyticPlanner#line403,
+                //  but in LogicalPlanBuilder, its default value is true)
+                return new OrderKey(partitionKey, true, false);
             }).collect(Collectors.toList()));
+            isAnalyticSort = true;
         }
 
         if (!orderKeyGroup.orderKeyList.isEmpty()) {
@@ -220,12 +174,16 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             // todo: check if this group contains the sorting requirements caused by partitionKeys; if not,
             //  this sorting is consistent with the sorting processing logic caused by the normal order by clause
         }
+        // no Order-related keys, so no need for LogicalSort
         return root;
     }
 
     private LogicalWindow createLogicalWindow(LogicalPlan root, WindowFrameGroup windowFrameGroup) {
+        // todo: partitionByEq and orderByEq
+
         LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup.groupList, root,
                 windowFrameGroup.partitionKeyList, windowFrameGroup.orderKeyList);
+        logicalWindow.setResolved(true);
         return logicalWindow;
     }
 
@@ -292,6 +250,91 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         return partitionKeyGroupList;
     }
 
+    private void mergeOrderKeyGroups(List<OrderKeyGroup> orderKeyGroupList) {
+        boolean merged = true;
+
+        while (merged) {
+            merged = false;
+            for (OrderKeyGroup okg1 : orderKeyGroupList) {
+                for (OrderKeyGroup okg2 : orderKeyGroupList) {
+                    if (okg1 != okg2 && okg2.isPrefixOf(okg1)) {
+                        // okg2 ∈ okg1
+                        okg1.absorb(okg2);
+                        orderKeyGroupList.remove(okg2);
+                        merged = true;
+                        break;
+                    }
+                }
+                if (merged) {
+                    break;
+                }
+            }
+        }
+    }
+
+    private void mergePartitionKeyGroups(List<PartitionKeyGroup> partitionKeyGroupList) {
+        boolean merged = true;
+
+        while (merged) {
+            merged = false;
+            for (PartitionKeyGroup pkg1 : partitionKeyGroupList) {
+                for (PartitionKeyGroup pkg2 : partitionKeyGroupList) {
+                    if (pkg1 != pkg2) {
+
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * [This comment references AnalyticPlanner.orderGroups()]
+     *
+     * Order partition groups (and the sort groups within them) by increasing
+     * totalOutputTupleSize. This minimizes the total volume of data that needs to be
+     * repartitioned and sorted.
+     * Also move the non-partitioning partition group to the end.
+     */
+    private void sortPartitionKeyGroups(List<PartitionKeyGroup> partitionKeyGroupList) {
+
+        PartitionKeyGroup noPartition = null;
+        // after createCommonPartitionKeyGroups(), there will be at most one empty partition.
+        for (PartitionKeyGroup pkg : partitionKeyGroupList) {
+            if (pkg.partitionKeyList.isEmpty()) {
+                noPartition = pkg;
+                partitionKeyGroupList.remove(noPartition);
+                break;
+            }
+        }
+
+        // compute tupleSize of partitionKeys
+        // when to compute and how to save??
+        for (PartitionKeyGroup pkg : partitionKeyGroupList) {
+            for (OrderKeyGroup okg : pkg.groupList) {
+                int tupleSizeOfOkg = 0;
+                for (WindowFrameGroup wfg : okg.groupList) {
+
+                }
+            }
+        }
+
+        partitionKeyGroupList.sort((pkg1, pkg2) -> {
+            return 0;
+        });
+
+        if (noPartition != null) {
+            partitionKeyGroupList.add(noPartition);
+        }
+
+    }
+
+    private void sortOrderKeyGroups(List<OrderKeyGroup> orderKeyGroupList) {
+        orderKeyGroupList.sort((okg1, okg2) -> {
+            return 0;
+        });
+
+    }
+
     /**
      * Window Functions that have common PartitionKeys, OrderKeys and WindowFrame
      */
@@ -302,7 +345,7 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         public final List<OrderKey> orderKeyList;
         public final WindowFrame windowFrame;
 
-        // 物理信息、outputSlot信息
+        // 物理信息、outputSlot信息 maybe no need here
 
         public WindowFrameGroup(Window window) {
             // maybe OrElse(null)?
@@ -322,9 +365,12 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             List<OrderKey> otherOrderKeyList = window.getWindowSpec().getOrderKeyList().orElse(null);
             WindowFrame otherWindowFrame = window.getWindowSpec().getWindowFrame().orElse(null);
 
-            // this function is absolutely equals to Expr.equalSets()
+            // for PartitionKeys, we don't care about the order of each key, so we use isEqualCollection() to compare
+            // whether these two lists have same keys; but for OrderKeys, the order of each key also make sense, so
+            // we use equals() to compare both the elements and their order in these two lists.
             if (CollectionUtils.isEqualCollection(partitionKeyList, otherPartitionKeyList)
                     && orderKeyList.equals(otherOrderKeyList)) {
+                // CollectionUtils.isEqualCollection() is absolutely equals to Expr.equalSets()
                 if ((windowFrame == null && otherWindowFrame == null) || windowFrame.equals(otherWindowFrame)) {
                     return true;
                 }
@@ -352,6 +398,29 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             return CollectionUtils.isEqualCollection(partitionKeyList, windowFrameGroup.partitionKeyList)
                 && orderKeyList.equals(windowFrameGroup.orderKeyList);
         }
+
+        /**
+         *  check if this okg isPrefixOf other, which means that other okg can cover this
+         */
+        public boolean isPrefixOf(OrderKeyGroup otherOkg) {
+            if (orderKeyList.size() > otherOkg.orderKeyList.size()) {
+                return false;
+            }
+            if (!CollectionUtils.isEqualCollection(partitionKeyList, otherOkg.partitionKeyList)) {
+                return false;
+            }
+
+            for (int i = 0; i < orderKeyList.size(); i++) {
+                if (!orderKeyList.get(i).equals(otherOkg.orderKeyList.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public void absorb(OrderKeyGroup otherOkg) {
+            groupList.addAll(otherOkg.groupList);
+        }
     }
 
     /**
@@ -359,6 +428,8 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
      */
     private static class PartitionKeyGroup extends WindowFunctionRelatedGroup<OrderKeyGroup> {
         public final List<Expression> partitionKeyList;
+
+        private int tupleSize;
 
         public PartitionKeyGroup(OrderKeyGroup orderKeyGroup) {
             partitionKeyList = orderKeyGroup.partitionKeyList;
@@ -368,6 +439,14 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         @Override
         public boolean isCompatible(OrderKeyGroup orderKeyGroup) {
             return CollectionUtils.isEqualCollection(partitionKeyList, orderKeyGroup.partitionKeyList);
+        }
+
+        public int getTupleSize() {
+            return tupleSize;
+        }
+
+        public void setTupleSize(int tupleSize) {
+            this.tupleSize = tupleSize;
         }
     }
 
@@ -382,4 +461,61 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         }
     }
 
+
+
+    /* ********************************************************************************************
+     * WindowFrame check and standardization
+     * ******************************************************************************************** */
+
+    /**
+     * Window frame 补全和检查逻辑：
+     *
+     * 无window frame：
+     * - rank类，up - cr
+     * - 聚合类，up - uf
+     * -
+     */
+    private void checkWindowFrame(Window window) {
+        WindowSpec windowSpec = window.getWindowSpec();
+        if (window.getWindowSpec().getWindowFrame().isPresent()) {
+            // WindowFrame windowFrame = window.getWindowSpec().getWindowFrame().get();
+
+            // windowFrame must be with orderKey clause
+            if (!windowSpec.getOrderKeyList().isPresent()) {
+                throw new AnalysisException("WindowFrame in any window function must be used with order by clause");
+            }
+
+            // windowFrame's check and complete, including offset validation
+
+            //
+        }
+
+        if (!window.getWindowSpec().getWindowFrame().isPresent()) {
+            // todo: 根据不同聚合函数来定义不同的frame
+            WindowFrame windowFrame = new WindowFrame(FrameUnitsType.ROWS,
+                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
+            window.getWindowSpec().setWindowFrame(windowFrame);
+        }
+
+        window.getWindowSpec().getWindowFrame().ifPresent(windowFrame -> resolveFrameBoundary(windowFrame));
+    }
+
+    /**
+     * if windowFrame's rightBoundary, we should complete it
+     */
+    private void resolveFrameBoundary(WindowFrame windowFrame) {
+        if (windowFrame.getRightBoundary() != null) {
+            return;
+        }
+
+        // "over( rows|range [UNBOUNDED] FOLLOWING)" is invalid.
+        if (windowFrame.getLeftBoundary().getFrameBoundType().isFollowing()) {
+            throw new AnalysisException("");
+        }
+
+        // "over( rows|range CURRENT ROW)" equals to "over( row|range between CURRENT ROW and CURRENT ROW)"
+        // "over( rows|range [UNBOUNDED] PRECEDING)"
+        //   equals to "over( row|range between [UNBOUNDED] PRECEDING and CURRENT ROW)"
+        windowFrame.setRightBoundary(new FrameBoundary(Optional.empty(), FrameBoundType.CURRENT_ROW));
+    }
 }

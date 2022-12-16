@@ -119,7 +119,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * Basic exception cases:
      * 0. WindowFrame != null, but OrderKeyList == null
      *
-     * WindowFrame exception cases:
+     * WindowFrame EXCEPTION cases:
      * 1. (unbounded following, xxx) || (offset following, !following)
      * 2. (xxx, unbounded preceding) || (!preceding, offset preceding)
      * 3. RANGE && ( (offset preceding, xxx) || (xxx, offset following) || (current row, current row) )

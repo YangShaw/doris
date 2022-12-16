@@ -66,6 +66,10 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         return resolved;
     }
 
+    public void setResolved(boolean resolved) {
+        this.resolved = resolved;
+    }
+
     public List<NamedExpression> getWindowExpressions() {
         return windowExpressions;
     }
