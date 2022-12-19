@@ -19,7 +19,7 @@ package org.apache.doris.nereids.trees.plans.logical;
 
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
-import org.apache.doris.nereids.properties.OrderKey;
+import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
@@ -40,26 +40,29 @@ import java.util.Optional;
 public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_TYPE> {
 
     private List<NamedExpression> windowExpressions;
-    private List<Expression> partitionSpec;
-    private List<OrderKey> orderSpec;
+
+    private WindowFrameGroup windowFrameGroup;
+
     private boolean resolved = false;
 
     // just for test
     public LogicalWindow(List<NamedExpression> windowExpressions, CHILD_TYPE child) {
-        this(windowExpressions, child, null, null);
+        this(windowExpressions, null, child);
     }
 
-    public LogicalWindow(List<NamedExpression> windowExpressions, CHILD_TYPE child, List<Expression> partitionSpec,
-                         List<OrderKey> orderSpec) {
-        this(windowExpressions, Optional.empty(), Optional.empty(), child);
-        this.partitionSpec = partitionSpec;
-        this.orderSpec = orderSpec;
+    public LogicalWindow(WindowFrameGroup windowFrameGroup, CHILD_TYPE child) {
+        this(null, windowFrameGroup, child);
     }
 
-    public LogicalWindow(List<NamedExpression> windowExpressions, Optional<GroupExpression> groupExpression,
+    public LogicalWindow(List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, CHILD_TYPE child) {
+        this(windowExpressions, windowFrameGroup, Optional.empty(), Optional.empty(), child);
+    }
+
+    public LogicalWindow(List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
                          Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
         super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
         this.windowExpressions = windowExpressions;
+        this.windowFrameGroup = windowFrameGroup;
     }
 
     public boolean isResolved() {
@@ -70,22 +73,18 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         this.resolved = resolved;
     }
 
+    public WindowFrameGroup getWindowFrameGroup() {
+        return windowFrameGroup;
+    }
+
     public List<NamedExpression> getWindowExpressions() {
         return windowExpressions;
-    }
-
-    public List<Expression> getPartitionSpec() {
-        return partitionSpec;
-    }
-
-    public List<OrderKey> getOrderSpec() {
-        return orderSpec;
     }
 
     @Override
     public Plan withChildren(List<Plan> children) {
         Preconditions.checkArgument(children.size() == 1);
-        return new LogicalWindow<>(windowExpressions, children.get(0), partitionSpec, orderSpec);
+        return new LogicalWindow<>(windowExpressions, windowFrameGroup, children.get(0));
     }
 
     @Override
@@ -93,12 +92,14 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         return windowExpressions;
     }
 
+
+
+
     @Override
     public String toString() {
         return Utils.toSqlString("LogicalWindow",
             "windowExpressions", windowExpressions,
-            "partitionSpec", partitionSpec,
-            "orderSpec", orderSpec
+            "windowFrameGroup", windowFrameGroup.getGroupList()
         );
     }
 
@@ -109,19 +110,23 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
 
     @Override
     public Plan withGroupExpression(Optional<GroupExpression> groupExpression) {
-        return new LogicalWindow<>(windowExpressions, groupExpression, Optional.of(getLogicalProperties()), child());
+        return new LogicalWindow<>(windowExpressions, windowFrameGroup, groupExpression, Optional.of(getLogicalProperties()), child());
     }
 
     @Override
     public Plan withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
-        return new LogicalWindow<>(windowExpressions, Optional.empty(), logicalProperties, child());
+        return new LogicalWindow<>(windowExpressions, windowFrameGroup, Optional.empty(), logicalProperties, child());
     }
 
     @Override
     public List<Slot> computeOutput() {
-        // todo: add partitions and orderkeys
-        return windowExpressions.stream()
-            .map(NamedExpression::toSlot)
-            .collect(ImmutableList.toImmutableList());
+        if (windowExpressions != null) {
+            return windowExpressions.stream()
+                .map(NamedExpression::toSlot)
+                .collect(ImmutableList.toImmutableList());
+        }
+
+        // todo:
+        return null;
     }
 }

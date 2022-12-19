@@ -42,8 +42,6 @@ import org.apache.commons.collections.CollectionUtils;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 /**
  * 目标：创建逻辑节点，来维护窗口函数相关的信息。窗口函数对排序有要求，因此也需要增加Sort相关的算子；
@@ -181,8 +179,7 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
     private LogicalWindow createLogicalWindow(LogicalPlan root, WindowFrameGroup windowFrameGroup) {
         // todo: partitionByEq and orderByEq
 
-        LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup.groupList, root,
-                windowFrameGroup.partitionKeyList, windowFrameGroup.orderKeyList);
+        LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup, root);
         logicalWindow.setResolved(true);
         return logicalWindow;
     }
@@ -338,12 +335,13 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
     /**
      * Window Functions that have common PartitionKeys, OrderKeys and WindowFrame
      */
-    private static class WindowFrameGroup extends WindowFunctionRelatedGroup<Window> {
+    public static class WindowFrameGroup extends WindowFunctionRelatedGroup<Window> {
 
         // Group内共用的标识性信息 要不要改为commonXXXList？
         public final List<Expression> partitionKeyList;
         public final List<OrderKey> orderKeyList;
         public final WindowFrame windowFrame;
+        public final List<Expression> windowFunctionList = Lists.newArrayList();
 
         // 物理信息、outputSlot信息 maybe no need here
 
@@ -352,7 +350,13 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             partitionKeyList = window.getWindowSpec().getPartitionKeyList().orElse(Lists.newArrayList());
             orderKeyList = window.getWindowSpec().getOrderKeyList().orElse(Lists.newArrayList());
             windowFrame = window.getWindowSpec().getWindowFrame().orElse(null);
+            windowFunctionList.add(window.getWindowFunction());
+            groupList.add(window);
+        }
 
+        @Override
+        public void addGroupMember(Window window) {
+            windowFunctionList.add(window.getWindowFunction());
             groupList.add(window);
         }
 
@@ -376,6 +380,22 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
                 }
             }
             return false;
+        }
+
+        public List<Expression> getPartitionKeyList() {
+            return partitionKeyList;
+        }
+
+        public List<OrderKey> getOrderKeyList() {
+            return orderKeyList;
+        }
+
+        public WindowFrame getWindowFrame() {
+            return windowFrame;
+        }
+
+        public List<Expression> getWindowFunctionList() {
+            return windowFunctionList;
         }
     }
 
@@ -452,12 +472,16 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
 
     private abstract static class WindowFunctionRelatedGroup<G> {
 
-        List<G> groupList = Lists.newArrayList();
+        protected List<G> groupList = Lists.newArrayList();
 
         public abstract boolean isCompatible(G group);
 
         public void addGroupMember(G group) {
             groupList.add(group);
+        }
+
+        public List<G> getGroupList() {
+            return groupList;
         }
     }
 

@@ -19,7 +19,8 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
-import org.apache.doris.nereids.trees.expressions.shape.NullaryExpression;
+import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
+import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
@@ -32,7 +33,7 @@ import java.util.List;
 /**
  * Window function: Row_number()
  */
-public class RowNumber extends WindowFunction implements NullaryExpression {
+public class RowNumber extends WindowFunction implements AlwaysNotNullable, LeafExpression {
 
     public RowNumber() {
         super("row_number");
@@ -58,11 +59,6 @@ public class RowNumber extends WindowFunction implements NullaryExpression {
     @Override
     public List<AbstractDataType> expectedInputTypes() {
         return ImmutableList.of();
-    }
-
-    @Override
-    public boolean nullable() {
-        return false;
     }
 
     @Override

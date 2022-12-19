@@ -20,6 +20,7 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.ImplicitlyCastableSignature;
+import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.shape.TernaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
@@ -32,7 +33,7 @@ import com.google.common.collect.ImmutableList;
 import java.util.List;
 
 /** Window function: lag */
-public class Lag extends WindowFunction implements TernaryExpression, ImplicitlyCastableSignature {
+public class Lag extends WindowFunction implements TernaryExpression, PropagateNullable, ImplicitlyCastableSignature {
 
     public Lag(Expression child) {
         this(child, Literal.of(1), Literal.of(null));
@@ -60,11 +61,6 @@ public class Lag extends WindowFunction implements TernaryExpression, Implicitly
 
     public void setDefaultValue(Expression defaultValue) {
         this.children.set(2, defaultValue);
-    }
-
-    @Override
-    public boolean nullable() {
-        return false;
     }
 
     @Override

@@ -18,6 +18,8 @@
 package org.apache.doris.nereids.glue.translator;
 
 import org.apache.doris.analysis.AggregateInfo;
+import org.apache.doris.analysis.AnalyticExpr;
+import org.apache.doris.analysis.AnalyticWindow;
 import org.apache.doris.analysis.BaseTableRef;
 import org.apache.doris.analysis.BinaryPredicate;
 import org.apache.doris.analysis.Expr;
@@ -50,6 +52,7 @@ import org.apache.doris.nereids.properties.PhysicalProperties;
 import org.apache.doris.nereids.trees.expressions.AggregateExpression;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Cast;
+import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.EqualTo;
 import org.apache.doris.nereids.trees.expressions.ExprId;
 import org.apache.doris.nereids.trees.expressions.Expression;
@@ -57,6 +60,10 @@ import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
+import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.WindowSpec;
+import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
 import org.apache.doris.nereids.trees.plans.AggMode;
 import org.apache.doris.nereids.trees.plans.AggPhase;
@@ -97,6 +104,7 @@ import org.apache.doris.nereids.util.JoinUtils;
 import org.apache.doris.nereids.util.TypeCoercionUtils;
 import org.apache.doris.nereids.util.Utils;
 import org.apache.doris.planner.AggregationNode;
+import org.apache.doris.planner.AnalyticEvalNode;
 import org.apache.doris.planner.AssertNumRowsNode;
 import org.apache.doris.planner.DataPartition;
 import org.apache.doris.planner.EmptySetNode;
@@ -611,35 +619,49 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
     }
 
     @Override
-    public PlanFragment visitPhysicalWindow(PhysicalWindow<? extends Plan> window, PlanTranslatorContext context) {
+    public PlanFragment visitPhysicalWindow(PhysicalWindow<? extends Plan> physicalWindow,
+                                            PlanTranslatorContext context) {
 
         // variable in Nereids
-        List<NamedExpression> windowExpressions = window.getWindowExpressions();
-        List<Expression> partitionKeyList = window.getPartitionSpec();
-        List<OrderKey> orderKeyList = window.getOrderSpec();
+        WindowFrameGroup windowFrameGroup = physicalWindow.getWindowFrameGroup();
 
-        // variable in old optimizer
-        // partition by clause
-        List<Expr> partitionExprs = Lists.newArrayList();
-        partitionExprs = partitionKeyList.stream()
-            .map(e -> ExpressionTranslator.translate(e, context))
-            .collect(Collectors.toList());
-
-        // order by clause
-        List<OrderByElement> orderByElements = Lists.newArrayList();
-        orderByElements = orderKeyList.stream()
-            .map(orderKey -> withOrderKeyInWindow(orderKey, context))
-            .collect(Collectors.toList());
-
-        // window frame clause
-        // Preconditions.checkArgument(windowFrame.isPresent());
-        // AnalyticWindow analyticWindow = withWindowFrame(windowFrame.get(), context);
-
-        // window function
-        // FunctionCallExpr fnCall = (FunctionCallExpr) windowFunction.accept(this, context);
+        List<Expression> partitionKeyList = windowFrameGroup.getPartitionKeyList();
+        List<OrderKey> orderKeyList = windowFrameGroup.getOrderKeyList();
+        WindowFrame windowFrame = windowFrameGroup.getWindowFrame();
+        List<Expression> windowFunctionList = windowFrameGroup.getWindowFunctionList();
 
 
-        // AnalyticEvalNode analyticEvalNode = new AnalyticEvalNode();
+        AnalyticExpr analyticExpr = (AnalyticExpr) ExpressionTranslator.translate(
+            new Window(null, new WindowSpec(
+                Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.of(windowFrame)
+            )), context);
+
+        List<Expr> partitionExprs = analyticExpr.getPartitionExprs();
+        List<OrderByElement> orderByElements = analyticExpr.getOrderByElements();
+        AnalyticWindow analyticWindow = analyticExpr.getWindow();
+        List<Expr> analyticFnCalls = windowFunctionList.stream()
+                .map(e -> ExpressionTranslator.translate(e, context))
+                .collect(Collectors.toList());
+
+        TupleDescriptor intermediateTupleDesc = context.generateTupleDesc();
+
+
+        PlanFragment child = physicalWindow.child().accept(this, context);
+
+        AnalyticEvalNode analyticEvalNode = new AnalyticEvalNode(
+            context.nextPlanNodeId(),
+            child.getPlanRoot(),
+            analyticFnCalls,
+            partitionExprs,
+            orderByElements,
+            analyticWindow,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
         /**
          * PlanNodeId id,
          * PlanNode input,

@@ -373,7 +373,7 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
         Expr e = null;
         if (boundary.hasOffset()) {
             Expression boundOffset = boundary.getBoundOffset().get();
-            e = translate(boundOffset, context);
+            boundOffset.accept(this, context);
             offsetValue = new BigDecimal(((Literal) boundOffset).getDouble());
         }
 
@@ -400,9 +400,38 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
                 .map(arg -> arg.accept(this, context))
                 .collect(ImmutableList.toImmutableList());
 
-        FunctionParams windowFnParams;
+        List<Expr> arguments = function.getArguments()
+                .stream()
+                .map(arg -> new SlotRef(arg.getDataType().toCatalogDataType(), arg.nullable()))
+                .collect(ImmutableList.toImmutableList());
 
-        return null;
+        FunctionParams windowFnParams = new FunctionParams(false, arguments);
+
+        ImmutableList<Type> argTypes = catalogArguments.stream()
+            .map(arg -> arg.getType())
+            .collect(ImmutableList.toImmutableList());
+
+        NullableMode nullableMode = function.nullable()
+            ? NullableMode.ALWAYS_NULLABLE
+            : NullableMode.ALWAYS_NOT_NULLABLE;
+
+        boolean isAnalyticFunction = false;
+        org.apache.doris.catalog.AggregateFunction catalogFunction = new org.apache.doris.catalog.AggregateFunction(
+            new FunctionName(function.getName()), argTypes,
+            function.getDataType().toCatalogDataType(),
+            function.getDataType().toCatalogDataType(),
+            function.hasVarArguments(),
+            null, "", "", null, "",
+            null, "", null, false,
+            isAnalyticFunction, false, TFunctionBinaryType.BUILTIN,
+            true, true, nullableMode
+        );
+
+        boolean isMergeFn = false;
+
+        // create catalog FunctionCallExpr without analyze again
+        return new FunctionCallExpr(catalogFunction, windowFnParams, windowFnParams, isMergeFn, catalogArguments);
+
     }
 
     // TODO: Supports for `distinct`

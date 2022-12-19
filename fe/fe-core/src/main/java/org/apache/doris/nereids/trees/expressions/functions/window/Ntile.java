@@ -19,32 +19,40 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
-import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
-import org.apache.doris.nereids.trees.expressions.shape.UnaryExpression;
+import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
+import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
+import org.apache.doris.nereids.types.IntegerType;
 
 import java.util.List;
 
-/** parent class for first_value() and last_value() */
-public class FirstOrLastValue extends WindowFunction
-        implements UnaryExpression, PropagateNullable, CustomSignature {
+public class Ntile extends WindowFunction implements LeafExpression, AlwaysNotNullable, CustomSignature {
 
-    public FirstOrLastValue(String name, Expression child) {
-        super(name, child);
+    private int buckets;
+
+    public Ntile(int buckets) {
+        super("ntile");
+        this.buckets = buckets;
     }
 
-    public FirstOrLastValue reverse() {
-        if (this instanceof FirstValue) {
-            return new LastValue(child());
-        } else {
-            return new FirstValue(child());
-        }
+    public int getBuckets() {
+        return buckets;
     }
 
     @Override
     public FunctionSignature customSignature(List<DataType> argumentTypes, List<Expression> arguments) {
-        return FunctionSignature.ret(argumentTypes.get(0)).args(argumentTypes.get(0));
+        return FunctionSignature.ret(IntegerType.INSTANCE).args(IntegerType.INSTANCE);
     }
 
+    @Override
+    public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
+        return visitor.visitNtile(this, context);
+    }
+
+    @Override
+    public DataType getDataType() {
+        return IntegerType.INSTANCE;
+    }
 }

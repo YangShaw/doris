@@ -34,22 +34,6 @@ public class FirstValue extends FirstOrLastValue {
     }
 
     @Override
-    public List<FunctionSignature> getSignatures() {
-        return null;
-    }
-
-    @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
-                                             List<FunctionSignature> signatures) {
-        return null;
-    }
-
-    @Override
-    public boolean nullable() {
-        return false;
-    }
-
-    @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitFirstValue(this, context);
     }

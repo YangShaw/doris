@@ -21,6 +21,7 @@ import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.properties.PhysicalProperties;
+import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.plans.Plan;
@@ -39,19 +40,16 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
     private List<NamedExpression> windowExpressions;
     private List<Expression> partitionSpec;
     private List<OrderKey> orderSpec;
+    private WindowFrameGroup windowFrameGroup;
 
-    public PhysicalWindow(List<NamedExpression> windowExpressions, List<Expression> partitionSpec,
-                          List<OrderKey> orderSpec, LogicalProperties logicalProperties, CHILD_TYPE child) {
-        this(windowExpressions, partitionSpec, orderSpec, Optional.empty(), logicalProperties, child);
+    public PhysicalWindow(WindowFrameGroup windowFrameGroup, LogicalProperties logicalProperties, CHILD_TYPE child) {
+        this(windowFrameGroup, Optional.empty(), logicalProperties, child);
     }
 
-    public PhysicalWindow(List<NamedExpression> windowExpressions, List<Expression> partitionSpec,
-                          List<OrderKey> orderSpec, Optional<GroupExpression> groupExpression,
+    public PhysicalWindow(WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
                           LogicalProperties logicalProperties, CHILD_TYPE child) {
         super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, child);
-        this.windowExpressions = windowExpressions;
-        this.partitionSpec = partitionSpec;
-        this.orderSpec = orderSpec;
+        this.windowFrameGroup = windowFrameGroup;
     }
 
     public List<NamedExpression> getWindowExpressions() {
@@ -64,6 +62,10 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
 
     public List<OrderKey> getOrderSpec() {
         return orderSpec;
+    }
+
+    public WindowFrameGroup getWindowFrameGroup() {
+        return windowFrameGroup;
     }
 
     @Override

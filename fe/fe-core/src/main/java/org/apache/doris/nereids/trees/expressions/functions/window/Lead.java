@@ -19,6 +19,8 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.functions.ExplicitlyCastableSignature;
+import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.shape.TernaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
@@ -29,7 +31,7 @@ import java.util.List;
 /**
  * Window function: Lead()
  */
-public class Lead extends WindowFunction implements TernaryExpression {
+public class Lead extends WindowFunction implements TernaryExpression, PropagateNullable, ExplicitlyCastableSignature {
 
     public Lead(Expression child) {
         this(child, Literal.of(1), Literal.of(null));
@@ -53,11 +55,6 @@ public class Lead extends WindowFunction implements TernaryExpression {
 
     public void setDefaultValue(Expression defaultValue) {
         this.children.set(2, defaultValue);
-    }
-
-    @Override
-    public boolean nullable() {
-        return false;
     }
 
     @Override
