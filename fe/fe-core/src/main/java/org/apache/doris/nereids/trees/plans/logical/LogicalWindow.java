@@ -32,45 +32,45 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * logical node to deal with window functions
  */
 public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_TYPE> {
 
+    private List<NamedExpression> outputExpressions;
+
     private List<NamedExpression> windowExpressions;
 
     private WindowFrameGroup windowFrameGroup;
 
-    private boolean resolved = false;
+    public LogicalWindow(List<NamedExpression> outputExpressions,
+                         List<NamedExpression> windowExpressions, CHILD_TYPE child) {
+        this(outputExpressions, windowExpressions, null, child);
+    }
 
     // just for test
     public LogicalWindow(List<NamedExpression> windowExpressions, CHILD_TYPE child) {
-        this(windowExpressions, null, child);
+        this(null, windowExpressions, null, child);
     }
 
     public LogicalWindow(WindowFrameGroup windowFrameGroup, CHILD_TYPE child) {
-        this(null, windowFrameGroup, child);
+        this(null, null, windowFrameGroup, child);
     }
 
-    public LogicalWindow(List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, CHILD_TYPE child) {
-        this(windowExpressions, windowFrameGroup, Optional.empty(), Optional.empty(), child);
+    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, CHILD_TYPE child) {
+        this(outputExpressions, windowExpressions, windowFrameGroup, Optional.empty(), Optional.empty(), child);
     }
 
-    public LogicalWindow(List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
+    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
                          Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
         super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
+        this.outputExpressions = outputExpressions;
         this.windowExpressions = windowExpressions;
         this.windowFrameGroup = windowFrameGroup;
-    }
-
-    public boolean isResolved() {
-        return resolved;
-    }
-
-    public void setResolved(boolean resolved) {
-        this.resolved = resolved;
     }
 
     public WindowFrameGroup getWindowFrameGroup() {
@@ -81,24 +81,34 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         return windowExpressions;
     }
 
+    public List<NamedExpression> getOutputExpressions() {
+        return outputExpressions;
+    }
+
     @Override
     public Plan withChildren(List<Plan> children) {
         Preconditions.checkArgument(children.size() == 1);
-        return new LogicalWindow<>(windowExpressions, windowFrameGroup, children.get(0));
+        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, children.get(0));
     }
 
     @Override
     public List<? extends Expression> getExpressions() {
-        return windowExpressions;
+        if (windowExpressions != null) {
+            return windowExpressions;
+        }
+        return windowFrameGroup.getGroupList();
     }
-
-
-
 
     @Override
     public String toString() {
+        if (windowExpressions != null) {
+            return Utils.toSqlString("LogicalWindow",
+                "outputExpressions", outputExpressions,
+                "windowExpressions", windowExpressions
+            );
+        }
         return Utils.toSqlString("LogicalWindow",
-            "windowExpressions", windowExpressions,
+            "outputExpressions", outputExpressions,
             "windowFrameGroup", windowFrameGroup.getGroupList()
         );
     }
@@ -110,23 +120,48 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
 
     @Override
     public Plan withGroupExpression(Optional<GroupExpression> groupExpression) {
-        return new LogicalWindow<>(windowExpressions, windowFrameGroup, groupExpression, Optional.of(getLogicalProperties()), child());
+        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, groupExpression, Optional.of(getLogicalProperties()), child());
     }
 
     @Override
     public Plan withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
-        return new LogicalWindow<>(windowExpressions, windowFrameGroup, Optional.empty(), logicalProperties, child());
+        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, Optional.empty(), logicalProperties, child());
     }
 
     @Override
     public List<Slot> computeOutput() {
+        List<Slot> outputList;
         if (windowExpressions != null) {
-            return windowExpressions.stream()
+            outputList = windowExpressions.stream()
                 .map(NamedExpression::toSlot)
-                .collect(ImmutableList.toImmutableList());
+                .collect(Collectors.toList());
+            outputList.addAll(child().getOutput());
+            return outputList;
         }
 
-        // todo:
-        return null;
+        outputList = windowFrameGroup.getGroupList().stream()
+            .map(NamedExpression::toSlot)
+            .collect(Collectors.toList());
+        outputList.addAll(child().getOutput());
+        return outputList;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        LogicalWindow<?> that = (LogicalWindow<?>) o;
+        return Objects.equals(outputExpressions, that.outputExpressions)
+            && Objects.equals(windowExpressions, that.windowExpressions)
+            && Objects.equals(windowFrameGroup, that.windowFrameGroup);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), outputExpressions, windowExpressions, windowFrameGroup);
     }
 }

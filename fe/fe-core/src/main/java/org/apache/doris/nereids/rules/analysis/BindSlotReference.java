@@ -37,6 +37,8 @@ import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.functions.Function;
+import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionRewriter;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.JoinType;
@@ -57,6 +59,7 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalRepeat;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSetOperation;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
+import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 import org.apache.doris.nereids.trees.plans.logical.UsingJoin;
 
 import com.google.common.base.Preconditions;
@@ -478,12 +481,51 @@ public class BindSlotReference implements AnalysisRuleFactory {
                 logicalPlan()
                     .when(plan -> plan.canBind() && !(plan instanceof LeafPlan))
                     .then(LogicalPlan::recomputeLogicalProperties)
+            ),
+            RuleType.BINDING_WINDOW_SLOT.build(
+                logicalWindow().when(Plan::canBind).thenApply(ctx -> {
+                    LogicalWindow<GroupPlan> window = ctx.root;
+                    Plan plan = bindWindowExpressions(window, ctx.cascadesContext);
+                    return plan;
+                })
             )
         );
     }
 
+    private Plan bindWindowExpressions(LogicalWindow<? extends Plan> logicalWindow, CascadesContext cascadesContext) {
+        List<Plan> inputs = logicalWindow.children();
+        List<NamedExpression> windowExpressions = Lists.newArrayList();
+        List<NamedExpression> outputExpressions = logicalWindow.getOutputExpressions().stream().map(expression -> {
+            if (expression instanceof UnboundAlias && expression.child(0) instanceof Window) {
+                Window window = (Window) (expression.child(0));
+                if (window.getPartitionKeyList().isPresent()) {
+                    window.setPartitionKeyList(window.getPartitionKeyList().get().stream()
+                        .map(expr -> bind(expr, inputs, logicalWindow, cascadesContext))
+                        .collect(Collectors.toList()));
+                }
+
+                if (window.getOrderKeyList().isPresent()) {
+                    window.setOrderKeyList(window.getOrderKeyList().get().stream()
+                        .map(orderKey -> {
+                            Expression item = bind(orderKey.getExpr(), inputs, logicalWindow, cascadesContext);
+                            return new OrderKey(item, orderKey.isAsc(), orderKey.isNullFirst());
+                        })
+                        .collect(Collectors.toList()));
+                }
+                NamedExpression boundedSlot = bind(expression, inputs, logicalWindow, cascadesContext);
+                windowExpressions.add(boundedSlot);
+                return boundedSlot;
+            } else if (expression instanceof Alias && expression.child(0) instanceof Window) {
+                windowExpressions.add(expression);
+                return expression;
+            }
+            return bind(expression, inputs, logicalWindow, cascadesContext);
+        }).collect(Collectors.toList());
+        return new LogicalWindow<>(outputExpressions, windowExpressions, logicalWindow.child(0));
+    }
+
     private Plan bindSort(
-            LogicalSort<? extends Plan> sort, Plan plan, CascadesContext ctx) {
+        LogicalSort<? extends Plan> sort, Plan plan, CascadesContext ctx) {
         // 1. We should deduplicate the slots, otherwise the binding process will fail due to the
         //    ambiguous slots exist.
         // 2. try to bound order-key with agg output, if failed, try to bound with output of agg.child

@@ -58,7 +58,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * step 1: check windowFrame in window;
      */
     public void checkWindowFrameBeforeFunc() {
-        window.getWindowSpec().getWindowFrame().ifPresent(this::withWindowFrame);
+        window.getWindowFrame().ifPresent(this::withWindowFrame);
     }
 
     /**
@@ -79,17 +79,18 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      */
     public void checkWindowAfterFunc() {
         // reverse windowFrame
-        Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
+        Optional<WindowFrame> windowFrame = window.getWindowFrame();
         if (windowFrame.isPresent()) {
             WindowFrame wf = windowFrame.get();
             if (wf.getRightBoundary().is(FrameBoundType.UNBOUNDED_FOLLOWING)
                     && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
                 // reverse OrderKey's asc and isNullFirst;
                 // in checkWindowFrameBeforeFunc(), we have confirmed that orderKeyLists must exist
-                window.getWindowSpec().setOrderKeyList(window.getWindowSpec().getOrderKeyList().get().stream()
+                window.setOrderKeyList(window.getOrderKeyList().get().stream()
                         .map(orderKey -> new OrderKey(orderKey.getExpr(), !orderKey.isAsc(), !orderKey.isNullFirst()))
                         .collect(Collectors.toList()));
                 // reverse WindowFrame
+                // e.g. (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
                 reverseWindow();
                 // reverse WindowFunction, which is used only for first_value() and last_value()
                 Expression windowFunction = window.getWindowFunction();
@@ -99,16 +100,16 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
             }
         } else {
             // this is equal to DEFAULT_WINDOW in class AnalyticWindow
-            window.getWindowSpec().setWindowFrame(new WindowFrame(FrameUnitsType.RANGE,
+            window.setWindowFrame(new WindowFrame(FrameUnitsType.RANGE,
                     FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
         }
 
     }
 
     private void reverseWindow() {
-        WindowFrame wf = window.getWindowSpec().getWindowFrame().get();
-        wf.setLeftBoundary(wf.getLeftBoundary().reverse());
-        wf.setRightBoundary(wf.getRightBoundary().reverse());
+        WindowFrame wf = window.getWindowFrame().get();
+        wf.setLeftBoundary(wf.getRightBoundary().reverse());
+        wf.setRightBoundary(wf.getLeftBoundary().reverse());
     }
 
     /**
@@ -129,17 +130,13 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * 5. check that boundOffset of left <= boundOffset of right
      */
     private void withWindowFrame(WindowFrame windowFrame) {
-        //        if (windowFrame.getRightBoundary() != null) {
-        //            return windowFrame;
-        //        }
 
         // case 0
-        if (!window.getWindowSpec().getOrderKeyList().isPresent()) {
+        if (!window.getOrderKeyList().isPresent()) {
             throw new AnalysisException("WindowFrame clause requires OrderBy clause");
         }
 
         // set default rightBoundary
-        // todo: 旧优化器保存了frame原本的描述（tosql）
         if (windowFrame.getRightBoundary().isNull()) {
             windowFrame.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
         }
@@ -199,7 +196,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
             }
         }
 
-        window.getWindowSpec().setWindowFrame(windowFrame);
+        window.setWindowFrame(windowFrame);
     }
 
     /**
@@ -219,7 +216,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         boolean isPositive = ((Literal) offset).getDouble() > 0;
         Preconditions.checkArgument(isPositive, "BoundOffset of WindowFrame must be positive");
 
-        FrameUnitsType frameUnits = window.getWindowSpec().getWindowFrame().get().getFrameUnits();
+        FrameUnitsType frameUnits = window.getWindowFrame().get().getFrameUnits();
         // case 3
         if (frameUnits == FrameUnitsType.ROWS) {
             Preconditions.checkArgument(offset.getDataType().isIntegralType(),
@@ -240,7 +237,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
     @Override
     public Lag visitLag(Lag lag, CheckContext ctx) {
         // check and complete window frame
-        window.getWindowSpec().getWindowFrame().ifPresent(wf -> {
+        window.getWindowFrame().ifPresent(wf -> {
             throw new AnalysisException("WindowFrame for LAG() must be null");
         });
 
@@ -249,7 +246,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         Expression defaultValue = lag.getDefaultValue();
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newPrecedingBoundary(offset));
-        window.getWindowSpec().setWindowFrame(requiredFrame);
+        window.setWindowFrame(requiredFrame);
 
         // check if the class of lag's column matches defaultValue, and cast it
         if (!TypeCoercionUtils.implicitCast(column.getDataType(), defaultValue.getDataType()).isPresent()) {
@@ -268,7 +265,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      */
     @Override
     public Lead visitLead(Lead lead, CheckContext ctx) {
-        window.getWindowSpec().getWindowFrame().ifPresent(wf -> {
+        window.getWindowFrame().ifPresent(wf -> {
             throw new AnalysisException("WindowFrame for LEAD() must be null");
         });
 
@@ -277,7 +274,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         Expression defaultValue = lead.getDefaultValue();
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newFollowingBoundary(offset));
-        window.getWindowSpec().setWindowFrame(requiredFrame);
+        window.setWindowFrame(requiredFrame);
 
         // check if the class of lag's column matches defaultValue, and cast it
         if (!TypeCoercionUtils.implicitCast(column.getDataType(), defaultValue.getDataType()).isPresent()) {
@@ -291,7 +288,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
     }
 
     /**
-     * [Referenced from class AnalyticExpr.standardize()]:
+     * [Copied from class AnalyticExpr.standardize()]:
      *
      *    FIRST_VALUE without UNBOUNDED PRECEDING gets rewritten to use a different window
      *    and change the function to return the last value. We either set the fn to be
@@ -316,7 +313,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      */
     @Override
     public FirstOrLastValue visitFirstValue(FirstValue firstValue, CheckContext ctx) {
-        Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
+        Optional<WindowFrame> windowFrame = window.getWindowFrame();
         if (windowFrame.isPresent()) {
             WindowFrame wf = windowFrame.get();
             if (wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)
@@ -331,10 +328,10 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
                     && wf.getRightBoundary().isNot(FrameBoundType.PRECEDING)) {
                 wf.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
             }
-            window.getWindowSpec().setWindowFrame(wf);
+            window.setWindowFrame(wf);
 
         } else {
-            window.getWindowSpec().setWindowFrame(new WindowFrame(FrameUnitsType.ROWS,
+            window.setWindowFrame(new WindowFrame(FrameUnitsType.ROWS,
                     FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
         }
 
@@ -368,8 +365,6 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
 
     /**
      * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
-     *
-     * (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
      */
     @Override
     public RowNumber visitRowNumber(RowNumber rowNumber, CheckContext ctx) {
@@ -388,13 +383,13 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * the requiredFrame should be used as current WindowFrame.
      */
     private void checkAndCompleteWindowFrame(Window window, WindowFrame requiredFrame, String functionName) {
-        window.getWindowSpec().getWindowFrame().ifPresent(wf -> {
+        window.getWindowFrame().ifPresent(wf -> {
             if (!wf.equals(requiredFrame)) {
                 throw new AnalysisException("WindowFrame for " + functionName + "() must be null "
                     + "or match with " + requiredFrame);
             }
         });
-        window.getWindowSpec().setWindowFrame(requiredFrame);
+        window.setWindowFrame(requiredFrame);
     }
 
     /** context for window function check specifically */

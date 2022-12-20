@@ -17,8 +17,10 @@
 
 package org.apache.doris.nereids.rules.rewrite.logical;
 
+import org.apache.doris.nereids.analyzer.UnboundAlias;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
+import org.apache.doris.nereids.rules.analysis.AnalysisRuleFactory;
 import org.apache.doris.nereids.rules.rewrite.RewriteRuleFactory;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
@@ -37,7 +39,7 @@ import java.util.stream.Collectors;
 /**
  * extract window expressions from LogicalProject, LogicalSort, LogicalAggregate
  */
-public class ExtractWindowExpression implements RewriteRuleFactory {
+public class ExtractWindowExpression implements AnalysisRuleFactory {
 
     /**
      * Matched patterns:
@@ -87,8 +89,8 @@ public class ExtractWindowExpression implements RewriteRuleFactory {
                 })
             ),*/
             RuleType.WINDOW_FUNCTION_FROM_PROJECT.build(
-                logicalProject().when(project -> containsWindowExpression(project.getProjects()))
-                    .then(logicalProject -> extractWindowExpression(logicalProject, logicalProject.getProjects()))
+                logicalProject().whenNot(LogicalProject::hasExtractedWindow)
+                    .then(logicalProject -> extractDuringAnalyze(logicalProject, logicalProject.getProjects()))
             ),
             RuleType.WINDOW_FUNCTION_FROM_AGG.build(
                 logicalAggregate().when(aggregate -> containsWindowExpression(aggregate.getOutputExpressions()))
@@ -104,7 +106,33 @@ public class ExtractWindowExpression implements RewriteRuleFactory {
         );
     }
 
-    // todo: 增加对LogicalAgg和LogicalSort的支持；这里只是LogicalProject算子；
+    private <E extends Expression> LogicalPlan extractDuringAnalyze(LogicalPlan root, List<E> expressionList) {
+        List<Expression> unboundWindowList = Lists.newArrayList();
+        List<Expression> remainedExpressionList = Lists.newArrayList();
+
+        expressionList.forEach(expression -> {
+            if (expression instanceof UnboundAlias && expression.child(0) instanceof Window) {
+                unboundWindowList.add(expression);
+            } else {
+                remainedExpressionList.add(expression);
+            }
+        });
+
+        if (unboundWindowList.isEmpty()) {
+            return new LogicalProject(expressionList, true, root.child(0));
+        }
+
+        unboundWindowList.forEach(unboundWindow -> {
+            remainedExpressionList.addAll(((Window)(unboundWindow.child(0))).getExpression());
+        });
+
+        LogicalProject newLogicalProject = new LogicalProject(remainedExpressionList, true, root.child(0));
+        LogicalWindow logicalWindow = new LogicalWindow(unboundWindowList, newLogicalProject);
+
+        return logicalWindow;
+//        return new LogicalProject(expressionList, true, logicalWindow);
+    }
+
     private <E extends Expression> LogicalPlan extractWindowExpression(LogicalPlan root, List<E> expressionList) {
         List<NamedExpression> windowList = Lists.newArrayList();
         List<E> remainedExpressionList = Lists.newArrayList();
@@ -131,8 +159,12 @@ public class ExtractWindowExpression implements RewriteRuleFactory {
     }
 
     private <E extends Expression> boolean containsWindowExpression(List<E> expressionList) {
+//        return expressionList.stream().anyMatch(expression ->
+//            expression instanceof Alias && expression.child(0) instanceof Window
+//        );
+
         return expressionList.stream().anyMatch(expression ->
-            expression instanceof Alias && expression.child(0) instanceof Window
+            expression instanceof UnboundAlias && expression.child(0) instanceof Window
         );
     }
 

@@ -221,6 +221,7 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalSelectHint;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSubQueryAlias;
 import org.apache.doris.nereids.trees.plans.logical.LogicalUnion;
+import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 import org.apache.doris.nereids.trees.plans.logical.RelationUtil;
 import org.apache.doris.nereids.trees.plans.logical.UsingJoin;
 import org.apache.doris.nereids.types.DataType;
@@ -962,7 +963,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
             UnboundFunction function = new UnboundFunction(functionName, isDistinct, params);
 
             if (ctx.windowSpec() != null) {
-                return new Window(function, withWindowSpec(ctx.windowSpec()));
+                return withWindowSpec(ctx.windowSpec(), function);
             }
             return function;
         });
@@ -971,7 +972,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
     /**
      * deal with window function definition
      */
-    public WindowSpec withWindowSpec(WindowSpecContext ctx) {
+    public Window withWindowSpec(WindowSpecContext ctx, Expression function) {
         Optional<List<Expression>> partitionKeys = Optional.ofNullable(ctx.partitionClause())
                 .map(a -> Optional.of(visit(a.expression(), Expression.class)))
                 .orElse(Optional.empty());
@@ -983,7 +984,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
         Optional<WindowFrame> windowFrame = optionalVisit(ctx.windowFrame(),
                 () -> withWindowFrame(ctx.windowFrame()));
 
-        return new WindowSpec(partitionKeys, orderKeys, windowFrame);
+        return new Window(function, partitionKeys, orderKeys, windowFrame);
     }
 
     /**
@@ -1526,10 +1527,21 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                             expressions, input, isDistinct);
                 } else {
                     List<NamedExpression> projects = getNamedExpressions(selectCtx.namedExpressionSeq());
-                    return new LogicalProject<>(projects, ImmutableList.of(), input, isDistinct);
+                    List<NamedExpression> windowExpressions = extractWindowExpressions(projects);
+                    if (!windowExpressions.isEmpty()) {
+                        return new LogicalWindow<>(projects, windowExpressions, input);
+                    }
+                    return new LogicalProject<>(projects, Collections.emptyList(), input, isDistinct);
                 }
             }
         });
+    }
+
+    private List<NamedExpression> extractWindowExpressions(List<NamedExpression> expressions) {
+        return expressions.stream()
+            .filter(expression ->
+                expression instanceof UnboundAlias && expression.child(0) instanceof Window)
+            .collect(ImmutableList.toImmutableList());
     }
 
     private LogicalPlan withFilter(LogicalPlan input, Optional<WhereClauseContext> whereCtx) {
@@ -1559,6 +1571,12 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                 return new LogicalRepeat<>(groupingSets, namedExpressions, input);
             } else {
                 List<Expression> groupByExpressions = visit(groupingElementContext.expression(), Expression.class);
+                List<NamedExpression> windowExpressions = extractWindowExpressions(namedExpressions);
+                if (!windowExpressions.isEmpty()) {
+                    return new LogicalWindow<>(namedExpressions, windowExpressions,
+                        new LogicalAggregate(groupByExpressions, namedExpressions, input)
+                    );
+                }
                 return new LogicalAggregate<>(groupByExpressions, namedExpressions, input);
             }
         });

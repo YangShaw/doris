@@ -53,7 +53,11 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalTVFRelation;
 import org.apache.doris.qe.ConnectContext;
 
 import com.google.common.collect.ImmutableList;
+<<<<<<< HEAD
 import com.google.common.collect.ImmutableSet;
+=======
+import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
+>>>>>>> d73ad22e29 (sort partitionkey groups)
 
 import java.util.List;
 import java.util.Locale;
@@ -154,6 +158,14 @@ public class BindFunction implements AnalysisRuleFactory {
                 unboundTVFRelation().thenApply(ctx -> {
                     UnboundTVFRelation relation = ctx.root;
                     return FunctionBinder.INSTANCE.bindTableValuedFunction(relation, ctx.statementContext);
+                })
+            ),
+            RuleType.BINDING_WINDOW_FUNCTION.build(
+                logicalWindow().thenApply(ctx -> {
+                    LogicalWindow<GroupPlan> window = ctx.root;
+                    List<NamedExpression> outputs = bind(window.getOutputExpressions(), ctx.connectContext.getEnv());
+                    List<NamedExpression> windowExpressions = bind(window.getWindowExpressions(), ctx.connectContext.getEnv());
+                    return new LogicalWindow(outputs, windowExpressions, window.child());
                 })
             )
         );

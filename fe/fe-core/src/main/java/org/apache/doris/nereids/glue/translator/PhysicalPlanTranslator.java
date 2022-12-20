@@ -628,23 +628,23 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         List<Expression> partitionKeyList = windowFrameGroup.getPartitionKeyList();
         List<OrderKey> orderKeyList = windowFrameGroup.getOrderKeyList();
         WindowFrame windowFrame = windowFrameGroup.getWindowFrame();
-        List<Expression> windowFunctionList = windowFrameGroup.getWindowFunctionList();
+        List<NamedExpression> windowFunctionList = windowFrameGroup.getGroupList();
 
-
+        // translate to old optimizer variable
         AnalyticExpr analyticExpr = (AnalyticExpr) ExpressionTranslator.translate(
-            new Window(null, new WindowSpec(
-                Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.of(windowFrame)
-            )), context);
+            new Window(null, Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.of(windowFrame))
+                , context);
 
         List<Expr> partitionExprs = analyticExpr.getPartitionExprs();
         List<OrderByElement> orderByElements = analyticExpr.getOrderByElements();
         AnalyticWindow analyticWindow = analyticExpr.getWindow();
         List<Expr> analyticFnCalls = windowFunctionList.stream()
-                .map(e -> ExpressionTranslator.translate(e, context))
+                .map(e -> ExpressionTranslator.translate(e.child(0).child(0), context))
                 .collect(Collectors.toList());
 
+        // generate tuple desc
         TupleDescriptor intermediateTupleDesc = context.generateTupleDesc();
-
+        TupleDescriptor outputTupleDesc = intermediateTupleDesc;
 
         PlanFragment child = physicalWindow.child().accept(this, context);
 
@@ -655,12 +655,12 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
             partitionExprs,
             orderByElements,
             analyticWindow,
+            intermediateTupleDesc,
+            outputTupleDesc,
             null,
             null,
             null,
-            null,
-            null,
-            null
+            intermediateTupleDesc
         );
         /**
          * PlanNodeId id,

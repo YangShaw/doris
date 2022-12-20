@@ -314,9 +314,9 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     @Override
     public Expr visitWindow(Window window, PlanTranslatorContext context) {
         // variable in Nereids
-        Optional<WindowFrame> windowFrame = window.getWindowSpec().getWindowFrame();
-        Optional<List<Expression>> partitionKeyList = window.getWindowSpec().getPartitionKeyList();
-        Optional<List<OrderKey>> orderKeyList = window.getWindowSpec().getOrderKeyList();
+        Optional<WindowFrame> windowFrame = window.getWindowFrame();
+        Optional<List<Expression>> partitionKeyList = window.getPartitionKeyList();
+        Optional<List<OrderKey>> orderKeyList = window.getOrderKeyList();
         Expression windowFunction = window.getWindowFunction();
 
         // variable in old optimizer

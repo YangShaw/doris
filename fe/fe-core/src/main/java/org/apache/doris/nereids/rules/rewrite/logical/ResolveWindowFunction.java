@@ -23,11 +23,13 @@ import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.analysis.WindowFunctionChecker;
 import org.apache.doris.nereids.rules.rewrite.OneRewriteRuleFactory;
+import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.WindowSpec;
+import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
@@ -65,9 +67,9 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
     @Override
     public Rule build() {
         return RuleType.RESOLVE_WINDOW_FUNCTION.build(
-            logicalWindow().whenNot(LogicalWindow::isResolved).then(logicalWindow -> {
+            logicalWindow().when(window -> window.getWindowExpressions() != null).then(logicalWindow -> {
 
-                return init(logicalWindow);
+                return resolveWindow(logicalWindow);
             })
         );
     }
@@ -87,12 +89,14 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
 
     /**
      *  main procedure
-     * @param windowList all collected window functions
      */
-    private LogicalWindow initT(List<Window> windowList, LogicalWindow<LogicalPlan> root) {
+    private LogicalWindow resolveWindow(LogicalWindow<GroupPlan> logicalWindow) {
+
+        List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
 
         // check
-        windowList.stream().forEach(window -> {
+        windowList.stream().forEach(windowAlias -> {
+            Window window = (Window) windowAlias.child(0);
             WindowFunctionChecker checker = new WindowFunctionChecker(window);
             checker.checkWindowFrameBeforeFunc();
             checker.checkWindowFunction();
@@ -102,20 +106,23 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         // create AnalyticInfo
 
 
-
-        /////////// create three kinds of groups
+        /////////// create three kinds of groups and compute tupleSize of each
         // windowFrameGroup
         List<WindowFrameGroup> windowFrameGroupList = createCommonWindowFrameGroups(windowList);
-        // todo: init()? -> init() just add some physical slot size infos; no need in current context
 
+        // orderKeyGroup
         List<OrderKeyGroup> orderKeyGroupList = createCommonOrderKeyGroups(windowFrameGroupList);
         mergeOrderKeyGroups(orderKeyGroupList);
 
+        // partitionKeyGroup
         List<PartitionKeyGroup> partitionKeyGroupList = createCommonPartitionKeyGroups(orderKeyGroupList);
-        // todo: merge(), order(); order() need the physical slot size; we can use DataType.width() as alternative
+        mergePartitionKeyGroups(partitionKeyGroupList);
+
+        // sort groups
+        sortPartitionKeyGroups(partitionKeyGroupList);
 
         // eliminate LogicalWindow, and replaced it with new LogicalWindow and LogicalSort
-        LogicalPlan newRoot = root.child();
+        LogicalPlan newRoot = logicalWindow.child();
         for (PartitionKeyGroup partitionKeyGroup : partitionKeyGroupList) {
             for (OrderKeyGroup orderKeyGroup : partitionKeyGroup.groupList) {
                 // create LogicalSort for each OrderKeyGroup;
@@ -180,7 +187,6 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         // todo: partitionByEq and orderByEq
 
         LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup, root);
-        logicalWindow.setResolved(true);
         return logicalWindow;
     }
 
@@ -189,23 +195,28 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
      * ******************************************************************************************** */
 
     // todo: can we simplify the following three algorithms?
-    private List<WindowFrameGroup> createCommonWindowFrameGroups(List<Window> windowList) {
+    private List<WindowFrameGroup> createCommonWindowFrameGroups(List<NamedExpression> windowList) {
         List<WindowFrameGroup> windowFrameGroupList = Lists.newArrayList();
         for (int i = 0; i < windowList.size(); i++) {
-            Window window = windowList.get(i);
+            NamedExpression windowAlias = windowList.get(i);
 
             boolean matched = false;
             for (WindowFrameGroup windowFrameGroup : windowFrameGroupList) {
-                if (windowFrameGroup.isCompatible(window)) {
-                    windowFrameGroup.addGroupMember(window);
+                if (windowFrameGroup.isCompatible(windowAlias)) {
+                    windowFrameGroup.addGroupMember(windowAlias);
                     matched = true;
                     break;
                 }
             }
             if (!matched) {
-                windowFrameGroupList.add(new WindowFrameGroup(window));
+                windowFrameGroupList.add(new WindowFrameGroup(windowAlias));
             }
         }
+
+        for (WindowFrameGroup wfg : windowFrameGroupList) {
+             wfg.setTupleSize(wfg.groupList.stream().mapToInt(window -> window.child(0).getDataType().width()).sum());
+        }
+
         return windowFrameGroupList;
     }
 
@@ -225,6 +236,11 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
                 orderKeyGroupList.add(new OrderKeyGroup(windowFrameGroup));
             }
         }
+
+        for (OrderKeyGroup okg : orderKeyGroupList) {
+            okg.setTupleSize(okg.getGroupList().stream().mapToInt(WindowFrameGroup::getTupleSize).sum());
+        }
+
         return orderKeyGroupList;
     }
 
@@ -244,6 +260,11 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
                 partitionKeyGroupList.add(new PartitionKeyGroup(orderKeyGroup));
             }
         }
+
+        for (PartitionKeyGroup pkg : partitionKeyGroupList) {
+            pkg.setTupleSize(pkg.getGroupList().stream().mapToInt(OrderKeyGroup::getTupleSize).sum());
+        }
+
         return partitionKeyGroupList;
     }
 
@@ -277,8 +298,15 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             for (PartitionKeyGroup pkg1 : partitionKeyGroupList) {
                 for (PartitionKeyGroup pkg2 : partitionKeyGroupList) {
                     if (pkg1 != pkg2) {
-
+                        // todo:
+                        pkg1.absorb(pkg2);
+                        partitionKeyGroupList.remove(pkg2);
+                        merged = true;
+                        break;
                     }
+                }
+                if (merged) {
+                    break;
                 }
             }
         }
@@ -304,70 +332,73 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             }
         }
 
-        // compute tupleSize of partitionKeys
-        // when to compute and how to save??
-        for (PartitionKeyGroup pkg : partitionKeyGroupList) {
-            for (OrderKeyGroup okg : pkg.groupList) {
-                int tupleSizeOfOkg = 0;
-                for (WindowFrameGroup wfg : okg.groupList) {
-
-                }
-            }
+        if (noPartition != null) {
+            partitionKeyGroupList.remove(noPartition);
         }
 
-        partitionKeyGroupList.sort((pkg1, pkg2) -> {
-            return 0;
-        });
+        partitionKeyGroupList.sort((pkg1, pkg2) ->
+            Integer.compare(pkg1.getTupleSize() - pkg2.getTupleSize(), 0)
+        );
 
         if (noPartition != null) {
             partitionKeyGroupList.add(noPartition);
         }
 
+        for (PartitionKeyGroup pkg : partitionKeyGroupList) {
+            sortOrderKeyGroups(pkg.getGroupList());
+        }
+
     }
 
     private void sortOrderKeyGroups(List<OrderKeyGroup> orderKeyGroupList) {
-        orderKeyGroupList.sort((okg1, okg2) -> {
-            return 0;
-        });
+        orderKeyGroupList.sort((okg1, okg2) ->
+            Integer.compare(okg1.getTupleSize() - okg2.getTupleSize(), 0)
+        );
 
+        for (OrderKeyGroup okg : orderKeyGroupList) {
+            sortWindowFrameGroups(okg.getGroupList());
+        }
+    }
+
+    private void sortWindowFrameGroups(List<WindowFrameGroup> windowFrameGroupList) {
+        windowFrameGroupList.sort((wfg1, wfg2) ->
+            Integer.compare(wfg1.getTupleSize() - wfg2.getTupleSize(), 0)
+        );
     }
 
     /**
      * Window Functions that have common PartitionKeys, OrderKeys and WindowFrame
      */
-    public static class WindowFrameGroup extends WindowFunctionRelatedGroup<Window> {
+    public static class WindowFrameGroup extends WindowFunctionRelatedGroup<NamedExpression> {
 
-        // Group内共用的标识性信息 要不要改为commonXXXList？
-        public final List<Expression> partitionKeyList;
-        public final List<OrderKey> orderKeyList;
-        public final WindowFrame windowFrame;
-        public final List<Expression> windowFunctionList = Lists.newArrayList();
+        private final List<Expression> partitionKeyList;
+        private final List<OrderKey> orderKeyList;
+        private final WindowFrame windowFrame;
+        // List<Alias(Window(WindowFunction))>
 
-        // 物理信息、outputSlot信息 maybe no need here
-
-        public WindowFrameGroup(Window window) {
+        public WindowFrameGroup(NamedExpression windowAlias) {
+            Window window = (Window) (windowAlias.child(0));
             // maybe OrElse(null)?
-            partitionKeyList = window.getWindowSpec().getPartitionKeyList().orElse(Lists.newArrayList());
-            orderKeyList = window.getWindowSpec().getOrderKeyList().orElse(Lists.newArrayList());
-            windowFrame = window.getWindowSpec().getWindowFrame().orElse(null);
-            windowFunctionList.add(window.getWindowFunction());
-            groupList.add(window);
+            partitionKeyList = window.getPartitionKeyList().orElse(Lists.newArrayList());
+            orderKeyList = window.getOrderKeyList().orElse(Lists.newArrayList());
+            windowFrame = window.getWindowFrame().orElse(null);
+            groupList.add(windowAlias);
         }
 
         @Override
-        public void addGroupMember(Window window) {
-            windowFunctionList.add(window.getWindowFunction());
-            groupList.add(window);
+        public void addGroupMember(NamedExpression windowAlias) {
+            groupList.add(windowAlias);
         }
 
         @Override
-        public boolean isCompatible(Window window) {
+        public boolean isCompatible(NamedExpression windowAlias) {
             // The comparison of PartitionKey is irrelevant to key's order,
             // but not in OrderKey' comparison.
+            Window window = (Window) (windowAlias.child(0));
 
-            List<Expression> otherPartitionKeyList = window.getWindowSpec().getPartitionKeyList().orElse(null);
-            List<OrderKey> otherOrderKeyList = window.getWindowSpec().getOrderKeyList().orElse(null);
-            WindowFrame otherWindowFrame = window.getWindowSpec().getWindowFrame().orElse(null);
+            List<Expression> otherPartitionKeyList = window.getPartitionKeyList().orElse(null);
+            List<OrderKey> otherOrderKeyList = window.getOrderKeyList().orElse(null);
+            WindowFrame otherWindowFrame = window.getWindowFrame().orElse(null);
 
             // for PartitionKeys, we don't care about the order of each key, so we use isEqualCollection() to compare
             // whether these two lists have same keys; but for OrderKeys, the order of each key also make sense, so
@@ -394,9 +425,6 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             return windowFrame;
         }
 
-        public List<Expression> getWindowFunctionList() {
-            return windowFunctionList;
-        }
     }
 
     /**
@@ -441,15 +469,14 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         public void absorb(OrderKeyGroup otherOkg) {
             groupList.addAll(otherOkg.groupList);
         }
+
     }
 
     /**
      * Window Functions that have common PartitionKeys.
      */
     private static class PartitionKeyGroup extends WindowFunctionRelatedGroup<OrderKeyGroup> {
-        public final List<Expression> partitionKeyList;
-
-        private int tupleSize;
+        public List<Expression> partitionKeyList;
 
         public PartitionKeyGroup(OrderKeyGroup orderKeyGroup) {
             partitionKeyList = orderKeyGroup.partitionKeyList;
@@ -461,18 +488,25 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             return CollectionUtils.isEqualCollection(partitionKeyList, orderKeyGroup.partitionKeyList);
         }
 
-        public int getTupleSize() {
-            return tupleSize;
-        }
-
-        public void setTupleSize(int tupleSize) {
-            this.tupleSize = tupleSize;
+        /**
+         * absorb other into this:
+         * - partitionKeyList will be the intersection of this two group
+         * - groupList(orderKeyGroup) will be the union of this two group
+         */
+        public void absorb(PartitionKeyGroup otherPkg) {
+            List<Expression> intersectPartitionKeys = partitionKeyList.stream()
+                .filter(expression -> otherPkg.partitionKeyList.contains(expression))
+                .collect(Collectors.toList());
+            partitionKeyList = intersectPartitionKeys;
+            groupList.addAll(otherPkg.groupList);
         }
     }
 
     private abstract static class WindowFunctionRelatedGroup<G> {
 
         protected List<G> groupList = Lists.newArrayList();
+
+        protected int tupleSize;
 
         public abstract boolean isCompatible(G group);
 
@@ -483,6 +517,14 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         public List<G> getGroupList() {
             return groupList;
         }
+
+        public int getTupleSize() {
+            return tupleSize;
+        }
+
+        public void setTupleSize(int tupleSize) {
+            this.tupleSize = tupleSize;
+        }
     }
 
 
@@ -490,39 +532,6 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
     /* ********************************************************************************************
      * WindowFrame check and standardization
      * ******************************************************************************************** */
-
-    /**
-     * Window frame 补全和检查逻辑：
-     *
-     * 无window frame：
-     * - rank类，up - cr
-     * - 聚合类，up - uf
-     * -
-     */
-    private void checkWindowFrame(Window window) {
-        WindowSpec windowSpec = window.getWindowSpec();
-        if (window.getWindowSpec().getWindowFrame().isPresent()) {
-            // WindowFrame windowFrame = window.getWindowSpec().getWindowFrame().get();
-
-            // windowFrame must be with orderKey clause
-            if (!windowSpec.getOrderKeyList().isPresent()) {
-                throw new AnalysisException("WindowFrame in any window function must be used with order by clause");
-            }
-
-            // windowFrame's check and complete, including offset validation
-
-            //
-        }
-
-        if (!window.getWindowSpec().getWindowFrame().isPresent()) {
-            // todo: 根据不同聚合函数来定义不同的frame
-            WindowFrame windowFrame = new WindowFrame(FrameUnitsType.ROWS,
-                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
-            window.getWindowSpec().setWindowFrame(windowFrame);
-        }
-
-        window.getWindowSpec().getWindowFrame().ifPresent(windowFrame -> resolveFrameBoundary(windowFrame));
-    }
 
     /**
      * if windowFrame's rightBoundary, we should complete it
