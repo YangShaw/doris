@@ -29,6 +29,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     @Override
     public Rule build() {
         return logicalWindow().then(logicalWindow -> new PhysicalWindow<>(
+                logicalWindow.getOutputExpressions(),
                 logicalWindow.getWindowFrameGroup(),
                 logicalWindow.getLogicalProperties(),
                 logicalWindow.child())

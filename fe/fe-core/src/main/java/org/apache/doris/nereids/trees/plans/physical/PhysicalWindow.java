@@ -24,6 +24,7 @@ import org.apache.doris.nereids.properties.PhysicalProperties;
 import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
+import org.apache.doris.nereids.trees.plans.algebra.Window;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
@@ -35,21 +36,38 @@ import java.util.Optional;
 /**
  * physical node for window function
  */
-public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD_TYPE> {
+public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD_TYPE> implements Window {
 
+    private List<NamedExpression> outputExpressions;
     private List<NamedExpression> windowExpressions;
     private List<Expression> partitionSpec;
     private List<OrderKey> orderSpec;
     private WindowFrameGroup windowFrameGroup;
 
-    public PhysicalWindow(WindowFrameGroup windowFrameGroup, LogicalProperties logicalProperties, CHILD_TYPE child) {
-        this(windowFrameGroup, Optional.empty(), logicalProperties, child);
+    public PhysicalWindow(List<NamedExpression> outputExpressions, WindowFrameGroup windowFrameGroup, LogicalProperties logicalProperties, CHILD_TYPE child) {
+        this(outputExpressions, windowFrameGroup, Optional.empty(), logicalProperties, child);
     }
 
-    public PhysicalWindow(WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
+    public PhysicalWindow(List<NamedExpression> outputExpressions, WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
                           LogicalProperties logicalProperties, CHILD_TYPE child) {
         super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, child);
+        this.outputExpressions = outputExpressions;
         this.windowFrameGroup = windowFrameGroup;
+    }
+
+    public PhysicalWindow(List<NamedExpression> outputExpressions, WindowFrameGroup windowFrameGroup,
+                          Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
+                          PhysicalProperties physicalProperties, StatsDeriveResult statsDeriveResult,
+                          CHILD_TYPE child) {
+        super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, physicalProperties, statsDeriveResult,
+            child);
+        this.outputExpressions = outputExpressions;
+        this.windowFrameGroup = windowFrameGroup;
+    }
+
+    @Override
+    public List<NamedExpression> getOutputExpressions() {
+        return outputExpressions;
     }
 
     public List<NamedExpression> getWindowExpressions() {
@@ -85,17 +103,18 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
 
     @Override
     public Plan withGroupExpression(Optional<GroupExpression> groupExpression) {
-        return null;
+        return new PhysicalWindow<>(outputExpressions, windowFrameGroup, groupExpression, getLogicalProperties(), child());
     }
 
     @Override
     public Plan withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
-        return null;
+        return new PhysicalWindow<>(outputExpressions, windowFrameGroup, Optional.empty(), logicalProperties.get(), child());
     }
 
     @Override
     public PhysicalPlan withPhysicalPropertiesAndStats(PhysicalProperties physicalProperties,
                                                        StatsDeriveResult statsDeriveResult) {
-        return null;
+        return new PhysicalWindow<>(outputExpressions, windowFrameGroup, Optional.empty(), getLogicalProperties(),
+            physicalProperties, statsDeriveResult, child());
     }
 }

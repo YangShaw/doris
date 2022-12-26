@@ -19,8 +19,10 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
+import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Window functions, as known as analytic functions.
@@ -33,5 +35,23 @@ public abstract class WindowFunction extends BoundFunction {
 
     public WindowFunction(String name, List<Expression> children) {
         super(name, children);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        WindowFunction that = (WindowFunction) o;
+        return Objects.equals(getName(), that.getName())
+            && Objects.equals(children, that.children);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getName(), children);
     }
 }

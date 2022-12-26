@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
@@ -56,8 +57,9 @@ public class DenseRank extends WindowFunction implements AlwaysNotNullable, Leaf
     }
 
     @Override
-    public List<AbstractDataType> expectedInputTypes() {
-        return ImmutableList.of();
+    public DenseRank withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() == 0);
+        return new DenseRank();
     }
 
     @Override

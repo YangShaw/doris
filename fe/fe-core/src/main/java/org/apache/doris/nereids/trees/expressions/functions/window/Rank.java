@@ -17,9 +17,11 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
+import org.apache.doris.nereids.trees.expressions.functions.agg.Avg;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
@@ -53,6 +55,12 @@ public class Rank extends WindowFunction implements AlwaysNotNullable, LeafExpre
     @Override
     protected FunctionSignature computeSignature(FunctionSignature signature, List<Expression> arguments) {
         return null;
+    }
+
+    @Override
+    public Rank withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() == 0);
+        return new Rank();
     }
 
     @Override

@@ -485,8 +485,7 @@ public class BindSlotReference implements AnalysisRuleFactory {
             RuleType.BINDING_WINDOW_SLOT.build(
                 logicalWindow().when(Plan::canBind).thenApply(ctx -> {
                     LogicalWindow<GroupPlan> window = ctx.root;
-                    Plan plan = bindWindowExpressions(window, ctx.cascadesContext);
-                    return plan;
+                    return bindWindowExpressions(window, ctx.cascadesContext);
                 })
             )
         );

@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
@@ -50,15 +51,15 @@ public class RowNumber extends WindowFunction implements AlwaysNotNullable, Leaf
         return null;
     }
 
-    // todo: add a class like emptySignature for window function
     @Override
     protected FunctionSignature computeSignature(FunctionSignature signature, List<Expression> arguments) {
         return null;
     }
 
     @Override
-    public List<AbstractDataType> expectedInputTypes() {
-        return ImmutableList.of();
+    public RowNumber withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() == 0);
+        return new RowNumber();
     }
 
     @Override

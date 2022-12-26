@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
@@ -31,6 +32,12 @@ public class FirstValue extends FirstOrLastValue {
 
     public FirstValue(Expression child) {
         super("first_value", child);
+    }
+
+    @Override
+    public FirstValue withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() == 1);
+        return new FirstValue(children.get(0));
     }
 
     @Override

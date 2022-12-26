@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.ExplicitlyCastableSignature;
@@ -45,6 +46,10 @@ public class Lead extends WindowFunction implements TernaryExpression, Propagate
         super("lead", child, offset, defaultValue);
     }
 
+    public Lead(List<Expression> children) {
+        super("lead", children);
+    }
+
     public Expression getOffset() {
         return child(1);
     }
@@ -71,6 +76,12 @@ public class Lead extends WindowFunction implements TernaryExpression, Propagate
     public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
                                              List<FunctionSignature> signatures) {
         return null;
+    }
+
+    @Override
+    public Lead withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() >= 1 && children.size() <= 3);
+        return new Lead(children);
     }
 
     @Override

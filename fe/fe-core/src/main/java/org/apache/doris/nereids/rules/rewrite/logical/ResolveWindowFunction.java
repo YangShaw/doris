@@ -127,7 +127,7 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
             for (OrderKeyGroup orderKeyGroup : partitionKeyGroup.groupList) {
                 // create LogicalSort for each OrderKeyGroup;
                 // in OrderKeyGroup, create LogicalWindow for each WindowFrameGroup
-                newRoot = createLogicalPlanNodeForWindowFunctions(newRoot, orderKeyGroup);
+                newRoot = createLogicalPlanNodeForWindowFunctions(newRoot, orderKeyGroup, logicalWindow);
             }
         }
         return (LogicalWindow) newRoot;
@@ -139,14 +139,14 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
      * create LogicalWindow and LogicalSort
      * ******************************************************************************************** */
 
-    private LogicalPlan createLogicalPlanNodeForWindowFunctions(LogicalPlan root, OrderKeyGroup orderKeyGroup) {
+    private LogicalPlan createLogicalPlanNodeForWindowFunctions(LogicalPlan root, OrderKeyGroup orderKeyGroup, LogicalWindow logicalWindow) {
         LogicalPlan newRoot;
         // LogicalSort for orderKeys; if there exists no orderKey, newRoot = root
         newRoot = createLogicalSortNode(root, orderKeyGroup);
 
         // LogicalWindow for windows; at least one LogicalWindow node will be added
         for (WindowFrameGroup windowFrameGroup : orderKeyGroup.groupList) {
-            newRoot = createLogicalWindow(newRoot, windowFrameGroup);
+            newRoot = createLogicalWindow(newRoot, windowFrameGroup, logicalWindow);
         }
 
         return newRoot;
@@ -183,11 +183,11 @@ public class ResolveWindowFunction extends OneRewriteRuleFactory {
         return root;
     }
 
-    private LogicalWindow createLogicalWindow(LogicalPlan root, WindowFrameGroup windowFrameGroup) {
+    private LogicalWindow createLogicalWindow(LogicalPlan root, WindowFrameGroup windowFrameGroup, LogicalWindow logicalWindow) {
         // todo: partitionByEq and orderByEq
-
-        LogicalWindow logicalWindow = new LogicalWindow(windowFrameGroup, root);
-        return logicalWindow;
+        LogicalWindow newWindow = new LogicalWindow(logicalWindow.getOutputExpressions(), windowFrameGroup, root);
+        newWindow.setNormalized(true);
+        return newWindow;
     }
 
     /* ********************************************************************************************
