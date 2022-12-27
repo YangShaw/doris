@@ -17,7 +17,6 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
-import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
@@ -25,11 +24,8 @@ import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.shape.UnaryExpression;
 import org.apache.doris.nereids.types.DataType;
 
-import java.util.List;
-
 /** parent class for first_value() and last_value() */
-public class FirstOrLastValue extends WindowFunction
-        implements UnaryExpression, PropagateNullable, CustomSignature {
+public class FirstOrLastValue extends WindowFunction implements UnaryExpression, PropagateNullable, CustomSignature {
 
     public FirstOrLastValue(String name, Expression child) {
         super(name, child);
@@ -44,8 +40,8 @@ public class FirstOrLastValue extends WindowFunction
     }
 
     @Override
-    public FunctionSignature customSignature(List<DataType> argumentTypes, List<Expression> arguments) {
-        return FunctionSignature.ret(argumentTypes.get(0)).args(argumentTypes.get(0));
+    public FunctionSignature customSignature() {
+        DataType dataType = getArgument(0).getDataType();
+        return FunctionSignature.ret(dataType).args(dataType);
     }
-
 }

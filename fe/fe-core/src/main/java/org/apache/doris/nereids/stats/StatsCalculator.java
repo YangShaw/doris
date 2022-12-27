@@ -59,7 +59,6 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalTVFRelation;
 import org.apache.doris.nereids.trees.plans.logical.LogicalTopN;
 import org.apache.doris.nereids.trees.plans.logical.LogicalUnion;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
-import org.apache.doris.nereids.trees.plans.physical.PhysicalAggregate;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalAssertNumRows;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalDistribute;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalEmptyRelation;
@@ -613,13 +612,13 @@ public class StatsCalculator extends DefaultPlanVisitor<StatsDeriveResult, Void>
         }
         for (Slot output : generate.getGeneratorOutput()) {
             ColumnStatistic columnStatistic = new ColumnStatisticBuilder()
-                .setCount(count)
-                .setMinValue(Double.MAX_VALUE)
-                .setMaxValue(Double.MIN_VALUE)
-                .setNdv(count)
-                .setNumNulls(0)
-                .setAvgSizeByte(output.getDataType().width())
-                .build();
+                    .setCount(count)
+                    .setMinValue(Double.MAX_VALUE)
+                    .setMaxValue(Double.MIN_VALUE)
+                    .setNdv(count)
+                    .setNumNulls(0)
+                    .setAvgSizeByte(output.getDataType().width())
+                    .build();
             columnStatsMap.put(output.getExprId(), columnStatistic);
         }
         return new StatsDeriveResult(count, columnStatsMap);
@@ -628,7 +627,31 @@ public class StatsCalculator extends DefaultPlanVisitor<StatsDeriveResult, Void>
     private StatsDeriveResult computeWindow(Window windowOperator) {
         StatsDeriveResult stats = groupExpression.childStatistics(0);
         Map<Id, ColumnStatistic> columnStatisticMap = new HashMap<>();
-
+        Map<Id, ColumnStatistic> childColumnStats = stats.getSlotIdToColumnStats();
+        windowOperator.getOutputExpressions().stream()
+            .map(expr -> {
+                ColumnStatistic value = null;
+                Set<Slot> slots = expr.getInputSlots();
+                if (slots.isEmpty()) {
+                    value = ColumnStatistic.DEFAULT;
+                } else {
+                    for (Slot slot : slots) {
+                        if (childColumnStats.containsKey(slot.getExprId())) {
+                            value = childColumnStats.get(slot.getExprId());
+                            break;
+                        }
+                    }
+                    if (value == null) {
+                        // process window expression
+                        // todo: how to set stats?
+                        // ColumnStatisticBuilder builder = new ColumnStatisticBuilder().setNdv(1)
+                        //         .setDataSize(expr.getDataType().width());
+                        value = ColumnStatistic.DEFAULT;
+                    }
+                }
+                return Pair.of(expr.toSlot().getExprId(), value);
+            })
+            .collect(Collectors.toMap(Pair::key, Pair::value));
         return new StatsDeriveResult(stats.getRowCount(), columnStatisticMap);
     }
 }

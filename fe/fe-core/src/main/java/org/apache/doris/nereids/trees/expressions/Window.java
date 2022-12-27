@@ -17,16 +17,16 @@
 
 package org.apache.doris.nereids.trees.expressions;
 
-import com.google.common.collect.Lists;
 import org.apache.doris.nereids.exceptions.UnboundException;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.shape.UnaryExpression;
+import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -62,17 +62,18 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
         return child();
     }
 
-
-    public List<Expression> getExpression() {
+    /**
+     * extract expressions from partitionKeys and orderKeys
+     */
+    public List<Expression> getExpressions() {
         List<Expression> expressions = Lists.newArrayList();
         partitionKeyList.ifPresent(list -> expressions.addAll(list));
         orderKeyList.ifPresent(list -> expressions.addAll(list.stream()
-            .map(orderKey -> orderKey.getExpr())
-            .collect(Collectors.toList()))
+                .map(orderKey -> orderKey.getExpr())
+                .collect(Collectors.toList()))
         );
         return expressions;
     }
-
 
     public Optional<List<Expression>> getPartitionKeyList() {
         return partitionKeyList;
@@ -90,12 +91,12 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
         this.partitionKeyList = Optional.ofNullable(partitionKeyList);
     }
 
-    public void setOrderKeyList(List<OrderKey> orderKeyList) {
-        this.orderKeyList = Optional.ofNullable(orderKeyList);
+    public Window withWindowFrame(WindowFrame windowFrame) {
+        return new Window(child(), partitionKeyList, orderKeyList, Optional.of(windowFrame));
     }
 
-    public void setWindowFrame(WindowFrame windowFrame) {
-        this.windowFrame = Optional.of(windowFrame);
+    public Window withOrderKeyList(List<OrderKey> orderKeyList) {
+        return new Window(child(), partitionKeyList, Optional.of(orderKeyList), windowFrame);
     }
 
     @Override
@@ -123,12 +124,12 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
         StringBuilder sb = new StringBuilder();
         sb.append(getWindowFunction().toSql() + " OVER(");
         partitionKeyList.ifPresent(pkList -> sb.append("PARTITION BY ")
-            .append(pkList.stream()
+                .append(pkList.stream()
                 .map(Expression::toSql)
                 .collect(Collectors.joining(", ", "", " "))));
 
         orderKeyList.ifPresent(okList -> sb.append("ORDER BY ")
-            .append(okList.stream()
+                .append(okList.stream()
                 .map(OrderKey::toSql)
                 .collect(Collectors.joining(", ", "", " "))));
 
@@ -144,19 +145,24 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
         sb.append(getWindowFunction() + " WindowSpec(");
 
         partitionKeyList.ifPresent(pkList -> sb.append("PARTITION BY ")
-            .append(pkList.stream()
-            .map(Expression::toString)
-            .collect(Collectors.joining(", ", "", ", "))));
+                .append(pkList.stream()
+                .map(Expression::toString)
+                .collect(Collectors.joining(", ", "", ", "))));
 
         orderKeyList.ifPresent(okList -> sb.append("ORDER BY ")
-            .append(okList.stream()
-            .map(OrderKey::toString)
-            .collect(Collectors.joining(", ", "", ", "))));
+                .append(okList.stream()
+                .map(OrderKey::toString)
+                .collect(Collectors.joining(", ", "", ", "))));
 
         windowFrame.ifPresent(wf -> sb.append(wf));
         String string = sb.toString();
         string = string.endsWith(", ") ? string.substring(0, string.length() - 1) : string;
         return string + ")";
+    }
+
+    @Override
+    public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
+        return visitor.visitWindow(this, context);
     }
 
     @Override

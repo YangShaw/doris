@@ -17,7 +17,6 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
-import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.ExplicitlyCastableSignature;
@@ -26,6 +25,8 @@ import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.shape.TernaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
+
+import com.google.common.base.Preconditions;
 
 import java.util.List;
 
@@ -73,8 +74,7 @@ public class Lead extends WindowFunction implements TernaryExpression, Propagate
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
-                                             List<FunctionSignature> signatures) {
+    public FunctionSignature searchSignature(List<FunctionSignature> signatures) {
         return null;
     }
 

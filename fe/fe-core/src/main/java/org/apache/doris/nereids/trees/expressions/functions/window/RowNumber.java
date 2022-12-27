@@ -17,7 +17,6 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
-import com.google.common.base.Preconditions;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
@@ -25,9 +24,8 @@ import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
-import org.apache.doris.nereids.types.coercion.AbstractDataType;
 
-import com.google.common.collect.ImmutableList;
+import com.google.common.base.Preconditions;
 
 import java.util.List;
 
@@ -46,13 +44,7 @@ public class RowNumber extends WindowFunction implements AlwaysNotNullable, Leaf
     }
 
     @Override
-    public FunctionSignature searchSignature(List<DataType> argumentTypes, List<Expression> arguments,
-                                             List<FunctionSignature> signatures) {
-        return null;
-    }
-
-    @Override
-    protected FunctionSignature computeSignature(FunctionSignature signature, List<Expression> arguments) {
+    public FunctionSignature searchSignature(List<FunctionSignature> signatures) {
         return null;
     }
 

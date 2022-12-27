@@ -50,14 +50,11 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalRepeat;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalTVFRelation;
+import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 import org.apache.doris.qe.ConnectContext;
 
 import com.google.common.collect.ImmutableList;
-<<<<<<< HEAD
 import com.google.common.collect.ImmutableSet;
-=======
-import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
->>>>>>> d73ad22e29 (sort partitionkey groups)
 
 import java.util.List;
 import java.util.Locale;
@@ -164,8 +161,7 @@ public class BindFunction implements AnalysisRuleFactory {
                 logicalWindow().thenApply(ctx -> {
                     LogicalWindow<GroupPlan> window = ctx.root;
                     List<NamedExpression> outputs = bind(window.getOutputExpressions(), ctx.connectContext.getEnv());
-                    List<NamedExpression> windowExpressions = bind(window.getWindowExpressions(), ctx.connectContext.getEnv());
-                    return new LogicalWindow(outputs, windowExpressions, window.child());
+                    return new LogicalWindow(outputs, window.child());
                 })
             )
         );

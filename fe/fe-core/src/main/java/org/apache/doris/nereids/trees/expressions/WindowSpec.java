@@ -20,6 +20,7 @@ package org.apache.doris.nereids.trees.expressions;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
+import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 
 import java.util.List;
 import java.util.Objects;
@@ -71,6 +72,11 @@ public class WindowSpec extends Expression implements PropagateNullable, LeafExp
 
     public void setWindowFrame(WindowFrame windowFrame) {
         this.windowFrame = Optional.of(windowFrame);
+    }
+
+    @Override
+    public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
+        return null;
     }
 
     @Override

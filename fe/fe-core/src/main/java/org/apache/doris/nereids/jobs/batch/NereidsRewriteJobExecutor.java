@@ -117,7 +117,6 @@ public class NereidsRewriteJobExecutor extends BatchRulesJob {
                 .add(topDownBatch(ImmutableList.of(new SelectMaterializedIndexWithAggregate())))
                 .add(topDownBatch(ImmutableList.of(new SelectMaterializedIndexWithoutAggregate())))
                 .add(topDownBatch(ImmutableList.of(new PruneOlapScanTablet())))
-                .add(topDownBatch(ImmutableList.of(new ResolveWindowFunction())))
                 // we need to execute this rule at the end of rewrite
                 // to avoid two consecutive same project appear when we do optimization.
                 .add(topDownBatch(ImmutableList.of(new EliminateOrderByConstant())))

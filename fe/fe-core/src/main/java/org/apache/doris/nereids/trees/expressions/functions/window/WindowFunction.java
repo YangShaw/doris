@@ -19,7 +19,6 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
-import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 
 import java.util.List;
 import java.util.Objects;

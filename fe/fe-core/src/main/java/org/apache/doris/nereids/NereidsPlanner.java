@@ -95,7 +95,6 @@ public class NereidsPlanner extends Planner {
         if (explainLevel.isPlanLevel) {
             return;
         }
-
         PhysicalPlan physicalPlan = (PhysicalPlan) resultPlan;
         PhysicalPlanTranslator physicalPlanTranslator = new PhysicalPlanTranslator();
         PlanTranslatorContext planTranslatorContext = new PlanTranslatorContext(cascadesContext);
@@ -160,6 +159,8 @@ public class NereidsPlanner extends Planner {
                     return analyzedPlan;
                 }
             }
+            System.out.println("analyzed------------------------");
+            System.out.println(cascadesContext.getMemo().copyOut().treeString());
 
             // rule-based optimize
             rewrite();
@@ -169,6 +170,8 @@ public class NereidsPlanner extends Planner {
                     return rewrittenPlan;
                 }
             }
+            System.out.println("rewrited------------------------");
+            System.out.println(cascadesContext.getMemo().copyOut().treeString());
 
             deriveStats();
 
@@ -179,12 +182,11 @@ public class NereidsPlanner extends Planner {
 
             // cost-based optimize and explore plan space
             optimize();
+            System.out.println("optimize------------------------");
+            System.out.println(cascadesContext.getMemo().copyOut().treeString());
 
             PhysicalPlan physicalPlan = chooseBestPlan(getRoot(), PhysicalProperties.ANY);
-            System.out.println("optimize------------------------");
-            System.out.println(physicalPlan.treeString());
 
-            // post-process physical plan out of memo, just for future use.
             physicalPlan = postProcess(physicalPlan);
             if (explainLevel == ExplainLevel.OPTIMIZED_PLAN || explainLevel == ExplainLevel.ALL_PLAN) {
                 optimizedPlan = physicalPlan;
@@ -286,6 +288,7 @@ public class NereidsPlanner extends Planner {
             return physicalPlan;
         } catch (Exception e) {
             String memo = cascadesContext.getMemo().toString();
+            System.out.println("Failed to choose best plan, memo structure:{}" + memo);
             LOG.warn("Failed to choose best plan, memo structure:{}", memo, e);
             throw new AnalysisException("Failed to choose best plan", e);
         }

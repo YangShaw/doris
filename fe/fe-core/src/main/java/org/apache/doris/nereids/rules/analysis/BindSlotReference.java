@@ -36,8 +36,10 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
-import org.apache.doris.nereids.trees.expressions.functions.Function;
+import org.apache.doris.nereids.trees.expressions.SubqueryExpr;
 import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.functions.ExpressionTrait;
+import org.apache.doris.nereids.trees.expressions.functions.Function;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionRewriter;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
@@ -493,34 +495,35 @@ public class BindSlotReference implements AnalysisRuleFactory {
 
     private Plan bindWindowExpressions(LogicalWindow<? extends Plan> logicalWindow, CascadesContext cascadesContext) {
         List<Plan> inputs = logicalWindow.children();
-        List<NamedExpression> windowExpressions = Lists.newArrayList();
         List<NamedExpression> outputExpressions = logicalWindow.getOutputExpressions().stream().map(expression -> {
-            if (expression instanceof UnboundAlias && expression.child(0) instanceof Window) {
+            if (expression.anyMatch(Window.class::isInstance)) {
                 Window window = (Window) (expression.child(0));
+                Optional<List<Expression>> newPKList;
+                // bind expressions in partitionKeys and orderKey
                 if (window.getPartitionKeyList().isPresent()) {
-                    window.setPartitionKeyList(window.getPartitionKeyList().get().stream()
-                        .map(expr -> bind(expr, inputs, logicalWindow, cascadesContext))
-                        .collect(Collectors.toList()));
+                    newPKList = Optional.of(window.getPartitionKeyList().get().stream()
+                         .map(expr -> bind(expr, inputs, logicalWindow, cascadesContext))
+                         .collect(Collectors.toList()));
+                } else {
+                    newPKList = Optional.empty();
                 }
 
+                Optional<List<OrderKey>> newOKList;
                 if (window.getOrderKeyList().isPresent()) {
-                    window.setOrderKeyList(window.getOrderKeyList().get().stream()
+                    newOKList = Optional.of(window.getOrderKeyList().get().stream()
                         .map(orderKey -> {
                             Expression item = bind(orderKey.getExpr(), inputs, logicalWindow, cascadesContext);
                             return new OrderKey(item, orderKey.isAsc(), orderKey.isNullFirst());
                         })
                         .collect(Collectors.toList()));
+                } else {
+                    newOKList = Optional.empty();
                 }
-                NamedExpression boundedSlot = bind(expression, inputs, logicalWindow, cascadesContext);
-                windowExpressions.add(boundedSlot);
-                return boundedSlot;
-            } else if (expression instanceof Alias && expression.child(0) instanceof Window) {
-                windowExpressions.add(expression);
-                return expression;
+                expression.withChildren(new Window(window.child(), newPKList, newOKList, window.getWindowFrame()));
             }
             return bind(expression, inputs, logicalWindow, cascadesContext);
         }).collect(Collectors.toList());
-        return new LogicalWindow<>(outputExpressions, windowExpressions, logicalWindow.child(0));
+        return new LogicalWindow<>(outputExpressions, logicalWindow.child(0));
     }
 
     private Plan bindSort(
@@ -566,7 +569,8 @@ public class BindSlotReference implements AnalysisRuleFactory {
             .collect(ImmutableList.toImmutableList());
     }
 
-    private <E extends Expression> List<E> bind(List<E> exprList, List<Plan> inputs, CascadesContext cascadesContext) {
+    private <E extends Expression> List<E> bind(List<E> exprList, List<Plan> inputs, Plan plan,
+            CascadesContext cascadesContext) {
         return exprList.stream()
             .map(expr -> bind(expr, inputs, cascadesContext))
             .collect(Collectors.toList());

@@ -19,13 +19,13 @@ package org.apache.doris.nereids.trees.plans.logical;
 
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
-import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction.WindowFrameGroup;
+import org.apache.doris.nereids.rules.implementation.LogicalWindowToPhysicalWindow.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
-import org.apache.doris.nereids.trees.plans.algebra.Window;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
+import org.apache.doris.nereids.trees.plans.algebra.Window;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
 import org.apache.doris.nereids.util.Utils;
 
@@ -50,14 +50,13 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
 
     private boolean isNormalized;
 
+    public LogicalWindow(List<NamedExpression> outputExpressions, CHILD_TYPE child) {
+        this(outputExpressions, null, null, child);
+    }
+
     public LogicalWindow(List<NamedExpression> outputExpressions,
                          List<NamedExpression> windowExpressions, CHILD_TYPE child) {
         this(outputExpressions, windowExpressions, null, child);
-    }
-
-    // just for test
-    public LogicalWindow(List<NamedExpression> windowExpressions, CHILD_TYPE child) {
-        this(null, windowExpressions, null, child);
     }
 
     public LogicalWindow(List<NamedExpression> outputExpressions,
@@ -65,17 +64,22 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         this(outputExpressions, null, windowFrameGroup, child);
     }
 
-    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, CHILD_TYPE child) {
-        this(outputExpressions, windowExpressions, windowFrameGroup, false, Optional.empty(), Optional.empty(), child);
+    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions,
+                         WindowFrameGroup windowFrameGroup, CHILD_TYPE child) {
+        this(outputExpressions, windowExpressions, windowFrameGroup, false, Optional.empty(),
+                Optional.empty(), child);
     }
 
-    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, boolean isNormalized, CHILD_TYPE child) {
-        this(outputExpressions, windowExpressions, windowFrameGroup, isNormalized, Optional.empty(), Optional.empty(), child);
+    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions,
+                         WindowFrameGroup windowFrameGroup, boolean isNormalized, CHILD_TYPE child) {
+        this(outputExpressions, windowExpressions, windowFrameGroup, isNormalized, Optional.empty(),
+                Optional.empty(), child);
     }
 
-    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions, WindowFrameGroup windowFrameGroup, boolean isNormalized,
-                         Optional<GroupExpression> groupExpression,
-                         Optional<LogicalProperties> logicalProperties, CHILD_TYPE child) {
+    public LogicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions,
+                         WindowFrameGroup windowFrameGroup, boolean isNormalized,
+                         Optional<GroupExpression> groupExpression, Optional<LogicalProperties> logicalProperties,
+                         CHILD_TYPE child) {
         super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
         this.outputExpressions = outputExpressions;
         this.windowExpressions = windowExpressions;
@@ -99,20 +103,51 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         return windowExpressions;
     }
 
+    public LogicalWindow withWindowExpressions(List<NamedExpression> windowExpressions) {
+        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, isNormalized, child());
+    }
+
+    public LogicalWindow withNormalized(List<NamedExpression> outputExpressions,
+                                        List<NamedExpression> windowExpressions, Plan normalizedChild) {
+        return new LogicalWindow(outputExpressions, windowExpressions, windowFrameGroup, true,
+            Optional.empty(), Optional.empty(), normalizedChild);
+    }
+
+    public LogicalWindow withWindowFrameGroup(WindowFrameGroup windowFrameGroup) {
+        return new LogicalWindow(outputExpressions, windowExpressions, windowFrameGroup, isNormalized, child());
+    }
+
+    @Override
+    public LogicalUnary<Plan> withChildren(List<Plan> children) {
+        Preconditions.checkArgument(children.size() == 1);
+        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup,
+            isNormalized, children.get(0));
+    }
+
     @Override
     public List<NamedExpression> getOutputExpressions() {
         return outputExpressions;
     }
 
     @Override
-    public Plan withChildren(List<Plan> children) {
-        Preconditions.checkArgument(children.size() == 1);
-        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, isNormalized, children.get(0));
+    public List<? extends Expression> getExpressions() {
+        ImmutableList.Builder<Expression> builder = new ImmutableList.Builder<>();
+        builder.addAll(outputExpressions);
+        if (windowExpressions != null) {
+            builder.addAll(extractExpressionsFromWindow(windowExpressions));
+        } else {
+            builder.addAll(extractExpressionsFromWindow(outputExpressions.stream()
+                    .filter(expr -> expr.anyMatch(org.apache.doris.nereids.trees.expressions.Window.class::isInstance))
+                    .collect(Collectors.toList())));
+        }
+        return builder.build();
     }
 
-    @Override
-    public List<? extends Expression> getExpressions() {
-        return outputExpressions;
+    private List<Expression> extractExpressionsFromWindow(List<NamedExpression> windowExpressions) {
+        return windowExpressions.stream().map(expression -> expression.child(0))
+            .map(org.apache.doris.nereids.trees.expressions.Window.class::cast)
+            .flatMap(window -> window.getExpressions().stream())
+            .collect(Collectors.toList());
     }
 
     @Override
@@ -123,11 +158,16 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
                 "outputExpressions", outputExpressions,
                 "windowExpressions", windowExpressions
             );
+        } else if (windowFrameGroup != null) {
+            return Utils.toSqlString("LogicalWindow",
+                "isNormalized", isNormalized,
+                "outputExpressions", outputExpressions,
+                "windowFrameGroup", windowFrameGroup.getGroupList()
+            );
         }
         return Utils.toSqlString("LogicalWindow",
             "isNormalized", isNormalized,
-            "outputExpressions", outputExpressions,
-            "windowFrameGroup", windowFrameGroup.getGroupList()
+            "outputExpressions", outputExpressions
         );
     }
 
@@ -138,12 +178,14 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
 
     @Override
     public Plan withGroupExpression(Optional<GroupExpression> groupExpression) {
-        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, isNormalized, groupExpression, Optional.of(getLogicalProperties()), child());
+        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, isNormalized,
+                groupExpression, Optional.of(getLogicalProperties()), child());
     }
 
     @Override
     public Plan withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
-        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, isNormalized, Optional.empty(), logicalProperties, child());
+        return new LogicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, isNormalized,
+                Optional.empty(), logicalProperties, child());
     }
 
     @Override
@@ -151,21 +193,6 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         return outputExpressions.stream()
             .map(NamedExpression::toSlot)
             .collect(ImmutableList.toImmutableList());
-
-//        List<Slot> outputList;
-//        if (windowExpressions != null) {
-//            outputList = windowExpressions.stream()
-//                .map(NamedExpression::toSlot)
-//                .collect(Collectors.toList());
-//            outputList.addAll(child().getOutput());
-//            return outputList;
-//        }
-//
-//        outputList = windowFrameGroup.getGroupList().stream()
-//            .map(NamedExpression::toSlot)
-//            .collect(Collectors.toList());
-//        outputList.addAll(child().getOutput());
-//        return outputList;
     }
 
     @Override

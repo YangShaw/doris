@@ -41,8 +41,8 @@ import org.apache.doris.analysis.TimestampArithmeticExpr;
 import org.apache.doris.catalog.Function.NullableMode;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.nereids.exceptions.AnalysisException;
-import org.apache.doris.nereids.trees.expressions.AggregateExpression;
 import org.apache.doris.nereids.properties.OrderKey;
+import org.apache.doris.nereids.trees.expressions.AggregateExpression;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.And;
 import org.apache.doris.nereids.trees.expressions.AssertNumRowsElement;
@@ -81,14 +81,14 @@ import org.apache.doris.nereids.trees.expressions.functions.generator.TableGener
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonArray;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonObject;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ScalarFunction;
-import org.apache.doris.nereids.trees.expressions.literal.DateLiteral;
-import org.apache.doris.nereids.trees.expressions.literal.DateTimeLiteral;
-import org.apache.doris.nereids.trees.expressions.literal.DateTimeV2Literal;
-import org.apache.doris.nereids.trees.expressions.literal.DateV2Literal;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
+import org.apache.doris.nereids.trees.expressions.literal.DateLiteral;
+import org.apache.doris.nereids.trees.expressions.literal.DateTimeLiteral;
+import org.apache.doris.nereids.trees.expressions.literal.DateTimeV2Literal;
+import org.apache.doris.nereids.trees.expressions.literal.DateV2Literal;
 import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.literal.NullLiteral;
 import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionVisitor;
@@ -352,6 +352,9 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
         return new OrderByElement(translate(orderKey.getExpr(), context), orderKey.isAsc(), orderKey.isNullFirst());
     }
 
+    /**
+     * translate WindowFrame to AnalyticWindow
+     */
     public AnalyticWindow withWindowFrame(WindowFrame windowFrame, PlanTranslatorContext context) {
 
         FrameUnitsType frameUnits = windowFrame.getFrameUnits();
@@ -408,23 +411,23 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
         FunctionParams windowFnParams = new FunctionParams(false, arguments);
 
         ImmutableList<Type> argTypes = catalogArguments.stream()
-            .map(arg -> arg.getType())
-            .collect(ImmutableList.toImmutableList());
+                .map(arg -> arg.getType())
+                .collect(ImmutableList.toImmutableList());
 
         NullableMode nullableMode = function.nullable()
-            ? NullableMode.ALWAYS_NULLABLE
-            : NullableMode.ALWAYS_NOT_NULLABLE;
+                ? NullableMode.ALWAYS_NULLABLE
+                : NullableMode.ALWAYS_NOT_NULLABLE;
 
-        boolean isAnalyticFunction = false;
+        boolean isAnalyticFunction = true;
         org.apache.doris.catalog.AggregateFunction catalogFunction = new org.apache.doris.catalog.AggregateFunction(
-            new FunctionName(function.getName()), argTypes,
-            function.getDataType().toCatalogDataType(),
-            function.getDataType().toCatalogDataType(),
-            function.hasVarArguments(),
-            null, "", "", null, "",
-            null, "", null, false,
-            isAnalyticFunction, false, TFunctionBinaryType.BUILTIN,
-            true, true, nullableMode
+                new FunctionName(function.getName()), argTypes,
+                function.getDataType().toCatalogDataType(),
+                function.getDataType().toCatalogDataType(),
+                function.hasVarArguments(),
+                null, "", "", null, "",
+                null, "", null, false,
+                isAnalyticFunction, false, TFunctionBinaryType.BUILTIN,
+                true, true, nullableMode
         );
 
         boolean isMergeFn = false;

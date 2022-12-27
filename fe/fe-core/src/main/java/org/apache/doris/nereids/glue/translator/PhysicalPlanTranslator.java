@@ -49,10 +49,10 @@ import org.apache.doris.nereids.properties.DistributionSpecHash.ShuffleType;
 import org.apache.doris.nereids.properties.DistributionSpecReplicated;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.properties.PhysicalProperties;
+import org.apache.doris.nereids.rules.implementation.LogicalWindowToPhysicalWindow.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.AggregateExpression;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Cast;
-import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.EqualTo;
 import org.apache.doris.nereids.trees.expressions.ExprId;
 import org.apache.doris.nereids.trees.expressions.Expression;
@@ -62,8 +62,6 @@ import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
-import org.apache.doris.nereids.trees.expressions.WindowSpec;
-import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
 import org.apache.doris.nereids.trees.plans.AggMode;
 import org.apache.doris.nereids.trees.plans.AggPhase;
@@ -632,8 +630,8 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
 
         // translate to old optimizer variable
         AnalyticExpr analyticExpr = (AnalyticExpr) ExpressionTranslator.translate(
-            new Window(null, Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.of(windowFrame))
-                , context);
+            new Window(null, Optional.of(partitionKeyList), Optional.of(orderKeyList),
+                    Optional.of(windowFrame)), context);
 
         List<Expr> partitionExprs = analyticExpr.getPartitionExprs();
         List<OrderByElement> orderByElements = analyticExpr.getOrderByElements();
@@ -649,33 +647,20 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         PlanFragment child = physicalWindow.child().accept(this, context);
 
         AnalyticEvalNode analyticEvalNode = new AnalyticEvalNode(
-            context.nextPlanNodeId(),
-            child.getPlanRoot(),
-            analyticFnCalls,
-            partitionExprs,
-            orderByElements,
-            analyticWindow,
-            intermediateTupleDesc,
-            outputTupleDesc,
-            null,
-            null,
-            null,
-            intermediateTupleDesc
+                context.nextPlanNodeId(),
+                child.getPlanRoot(),
+                analyticFnCalls,
+                partitionExprs,
+                orderByElements,
+                analyticWindow,
+                intermediateTupleDesc,
+                outputTupleDesc,
+                null,
+                null,
+                null,
+                intermediateTupleDesc
         );
-        /**
-         * PlanNodeId id,
-         * PlanNode input,
-         * List<Expr> analyticFnCalls,
-         * List<Expr> partitionExprs,
-         * List<OrderByElement> orderByElements,
-         * AnalyticWindow analyticWindow,
-         * TupleDescriptor intermediateTupleDesc,
-         * TupleDescriptor outputTupleDesc,
-         * ExprSubstitutionMap logicalToPhysicalSmap,
-         * Expr partitionByEq,
-         * Expr orderByEq,
-         * TupleDescriptor bufferedTupleDesc
-         */
+        Preconditions.checkArgument(analyticEvalNode != null);
         return null;
     }
 

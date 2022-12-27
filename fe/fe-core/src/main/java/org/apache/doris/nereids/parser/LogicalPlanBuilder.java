@@ -149,6 +149,8 @@ import org.apache.doris.nereids.trees.expressions.Subtract;
 import org.apache.doris.nereids.trees.expressions.TVFProperties;
 import org.apache.doris.nereids.trees.expressions.TimestampArithmetic;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
+import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.Function;
 import org.apache.doris.nereids.trees.expressions.functions.agg.Count;
 import org.apache.doris.nereids.trees.expressions.functions.agg.GroupConcat;
@@ -173,9 +175,6 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.WeeksSub;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.YearsAdd;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.YearsDiff;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.YearsSub;
-import org.apache.doris.nereids.trees.expressions.Window;
-import org.apache.doris.nereids.trees.expressions.WindowFrame;
-import org.apache.doris.nereids.trees.expressions.WindowSpec;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
@@ -1527,9 +1526,8 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                             expressions, input, isDistinct);
                 } else {
                     List<NamedExpression> projects = getNamedExpressions(selectCtx.namedExpressionSeq());
-                    List<NamedExpression> windowExpressions = extractWindowExpressions(projects);
-                    if (!windowExpressions.isEmpty()) {
-                        return new LogicalWindow<>(projects, windowExpressions, input);
+                    if (containsWindowExpressions(projects)) {
+                        return new LogicalWindow<>(projects, input);
                     }
                     return new LogicalProject<>(projects, Collections.emptyList(), input, isDistinct);
                 }
@@ -1542,6 +1540,10 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
             .filter(expression ->
                 expression instanceof UnboundAlias && expression.child(0) instanceof Window)
             .collect(ImmutableList.toImmutableList());
+    }
+
+    private boolean containsWindowExpressions(List<NamedExpression> expressions) {
+        return expressions.stream().anyMatch(expr -> expr.anyMatch(Window.class::isInstance));
     }
 
     private LogicalPlan withFilter(LogicalPlan input, Optional<WhereClauseContext> whereCtx) {
@@ -1571,10 +1573,9 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                 return new LogicalRepeat<>(groupingSets, namedExpressions, input);
             } else {
                 List<Expression> groupByExpressions = visit(groupingElementContext.expression(), Expression.class);
-                List<NamedExpression> windowExpressions = extractWindowExpressions(namedExpressions);
-                if (!windowExpressions.isEmpty()) {
-                    return new LogicalWindow<>(namedExpressions, windowExpressions,
-                        new LogicalAggregate(groupByExpressions, namedExpressions, input)
+                if (containsWindowExpressions(namedExpressions)) {
+                    return new LogicalWindow<>(namedExpressions,
+                            new LogicalAggregate(groupByExpressions, namedExpressions, input)
                     );
                 }
                 return new LogicalAggregate<>(groupByExpressions, namedExpressions, input);

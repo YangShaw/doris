@@ -18,7 +18,6 @@
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.catalog.FunctionSignature;
-import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
@@ -26,8 +25,9 @@ import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
 
-import java.util.List;
-
+/**
+ * window function: Ntile()
+ */
 public class Ntile extends WindowFunction implements LeafExpression, AlwaysNotNullable, CustomSignature {
 
     private int buckets;
@@ -42,7 +42,7 @@ public class Ntile extends WindowFunction implements LeafExpression, AlwaysNotNu
     }
 
     @Override
-    public FunctionSignature customSignature(List<DataType> argumentTypes, List<Expression> arguments) {
+    public FunctionSignature customSignature() {
         return FunctionSignature.ret(IntegerType.INSTANCE).args(IntegerType.INSTANCE);
     }
 

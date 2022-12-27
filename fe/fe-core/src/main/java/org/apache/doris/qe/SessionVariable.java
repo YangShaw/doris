@@ -1325,10 +1325,6 @@ public class SessionVariable implements Serializable, Writable {
         this.nereidsCboPenaltyFactor = penaltyFactor;
     }
 
-    public void setEnableNereidsTrace(boolean enableNereidsTrace) {
-        this.enableNereidsTrace = enableNereidsTrace;
-    }
-
     public boolean isEnableNereidsTrace() {
         return isEnableNereidsPlanner() && enableNereidsTrace;
     }

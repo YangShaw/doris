@@ -134,6 +134,7 @@ public interface FunctionHelper {
             super(functionClass, names);
         }
     }
+
     class WindowFunc extends NamedFunc<WindowFunction> {
         public WindowFunc(Class<? extends WindowFunction> functionClass, String... names) {
             super(functionClass, names);

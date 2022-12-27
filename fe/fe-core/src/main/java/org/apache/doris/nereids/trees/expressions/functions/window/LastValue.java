@@ -17,12 +17,9 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
-import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
-
-import java.util.List;
 
 /**
  * Window function: Last_value()

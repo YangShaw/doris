@@ -51,11 +51,8 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSubQueryAlias;
 import org.apache.doris.nereids.trees.plans.logical.LogicalTVFRelation;
 import org.apache.doris.nereids.trees.plans.logical.LogicalTopN;
-<<<<<<< HEAD
 import org.apache.doris.nereids.trees.plans.logical.LogicalUnion;
-=======
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
->>>>>>> 9e4725153 (add rule ExtractWindowExpression)
 import org.apache.doris.nereids.trees.plans.physical.AbstractPhysicalJoin;
 import org.apache.doris.nereids.trees.plans.physical.AbstractPhysicalSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalAssertNumRows;
