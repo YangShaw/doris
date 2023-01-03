@@ -49,6 +49,7 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
 
             List<NamedExpression> outputs = logicalWindow.getOutputExpressions();
 
+            // handle bottom projects
             Set<Alias> existedAlias = ExpressionUtils.collect(outputs, Alias.class::isInstance);
             Set<Expression> toBePushedDown = collectExpressionsToBePushedDown(logicalWindow);
             NormalizeToSlotContext context =
@@ -58,6 +59,7 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
                     ? logicalWindow.child()
                     : new LogicalProject<>(ImmutableList.copyOf(bottomProjects), logicalWindow.child());
 
+            // handle window's outputs and windowExprs
             List<NamedExpression> normalizedOutputs = context.normalizeToUseSlotRef(outputs);
             Set<Window> normalizedWindows = ExpressionUtils.collect(normalizedOutputs, Window.class::isInstance);
 
@@ -75,72 +77,9 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
                     logicalWindow.withNormalized(normalizedWindowOutputs,
                             ImmutableList.copyOf(normalizedWindowsWithAlias), normalizedChild);
 
+            // generate top projects
             List<NamedExpression> topProjects = ctxForWindows.normalizeToUseSlotRef(normalizedOutputs);
             return new LogicalProject<>(topProjects, normalizedLogicalWindow);
-
-//            Map<Expression, Expression> substitutionMap = Maps.newHashMap();
-//            // projects of bottom LogicalProject
-//            List<NamedExpression> bottomProjections = Lists.newArrayList();
-//            // outputs of LogicalWindow
-//            List<NamedExpression> newOutputs = Lists.newArrayList();
-//
-//            Map<Boolean, List<Expression>> partitionedOutputs = outputs.stream()
-//                    .collect(Collectors.groupingBy(SlotReference.class::isInstance));
-//
-//            if (partitionedOutputs.containsKey(true)) {
-//                // other slots
-//                // add to botProj、newOutputs
-//                partitionedOutputs.get(true).stream()
-//                    .map(SlotReference.class::cast)
-//                    .peek(s -> substitutionMap.put(s, s))
-//                    .peek(bottomProjections::add)
-//                    .forEach(newOutputs::add);
-//            }
-//
-//            if (partitionedOutputs.containsKey(false)) {
-//                // slots of WindowAlias
-//                for (Expression expression : partitionedOutputs.get(false)) {
-//                    Window window = (Window) expression.child(0);
-//
-//                    // expr in window specs (partition by and order by clause)
-//                    List<NamedExpression> exprInWindowSpecs = window.getExpressions().stream()
-//                            .map(SlotReference.class::cast)
-//                            .collect(Collectors.toList());
-//                    bottomProjections.addAll(exprInWindowSpecs);
-//
-//                    // expr in function's arguments
-//                    WindowFunction function = (WindowFunction) window.getWindowFunction();
-//                    List<Expression> newChildren = Lists.newArrayList();
-//                    for (Expression child : function.getArguments()) {
-//                        if (child instanceof SlotReference || child instanceof Literal) {
-//                            newChildren.add(child);
-//                            if (child instanceof SlotReference) {
-//                                bottomProjections.add((SlotReference) child);
-//                            }
-//                        } else {
-//                            Alias alias = new Alias(child, child.toSql());
-//                            bottomProjections.add(alias);
-//                            newChildren.add(alias.toSlot());
-//                        }
-//                    }
-//                    WindowFunction newFunction = (WindowFunction) function.withChildren(newChildren);
-//                    Window newWindow = window.withChildren(ImmutableList.of(newFunction));
-//                    Alias alias = new Alias(newWindow, newWindow.toSql());
-//                    newOutputs.add(alias);
-//                    windowExpressions.add(alias);
-//                    substitutionMap.put(window, alias.toSlot());
-//                }
-//            }
-//            LogicalProject bottomProject = new LogicalProject(bottomProjections, logicalWindow.child());
-//            LogicalWindow newWindow = new LogicalWindow(newOutputs, windowExpressions, bottomProject);
-//            newWindow.setNormalized(true);
-//            // projects of top LogicalProject
-//            List<NamedExpression> topProjections = outputs.stream()
-//                    .map(e -> ExpressionUtils.replace(e, substitutionMap))
-//                    .map(NamedExpression.class::cast)
-//                    .collect(Collectors.toList());
-//            LogicalProject topProject = new LogicalProject(topProjections, newWindow);
-//            return topProject;
         }).toRule(RuleType.NORMALIZE_WINDOW);
     }
 

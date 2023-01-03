@@ -28,6 +28,7 @@ import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.algebra.Window;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
+import org.apache.doris.nereids.util.Utils;
 import org.apache.doris.statistics.StatsDeriveResult;
 
 import com.google.common.base.Preconditions;
@@ -102,7 +103,7 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
 
     @Override
     public <R, C> R accept(PlanVisitor<R, C> visitor, C context) {
-        return null;
+        return visitor.visitPhysicalWindow(this, context);
     }
 
     @Override
@@ -127,6 +128,15 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
                                                        StatsDeriveResult statsDeriveResult) {
         return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, Optional.empty(),
                 getLogicalProperties(), physicalProperties, statsDeriveResult, child());
+    }
+
+    @Override
+    public String toString() {
+        return Utils.toSqlString("PhysicalWindow",
+            "outputExpressions", outputExpressions,
+            "windowExpressions", windowExpressions,
+            "windowFrameGroup", windowFrameGroup
+        );
     }
 
     @Override

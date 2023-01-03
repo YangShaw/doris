@@ -182,8 +182,6 @@ public class NereidsPlanner extends Planner {
 
             // cost-based optimize and explore plan space
             optimize();
-            System.out.println("optimize------------------------");
-            System.out.println(cascadesContext.getMemo().copyOut().treeString());
 
             PhysicalPlan physicalPlan = chooseBestPlan(getRoot(), PhysicalProperties.ANY);
 

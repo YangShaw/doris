@@ -103,7 +103,7 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
             PlanChecker.from(connectContext)
                     .analyze(sqls.get(i))
                     .applyTopDown(new ExtractWindowExpression())
-                    .applyTopDown(new ResolveWindowFunction())
+                    .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame())
                     .matches(
                         logicalWindow()
                             .when(FieldChecker.check("windowExpressions", ImmutableList.of(alias)))

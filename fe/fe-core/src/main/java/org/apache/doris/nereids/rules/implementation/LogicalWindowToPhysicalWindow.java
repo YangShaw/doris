@@ -22,8 +22,8 @@ import org.apache.doris.nereids.annotation.DependsRules;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
+import org.apache.doris.nereids.rules.rewrite.logical.CheckAndStandardizeWindowFunctionAndFrame;
 import org.apache.doris.nereids.rules.rewrite.logical.NormalizeWindow;
-import org.apache.doris.nereids.rules.rewrite.logical.ResolveWindowFunction;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
@@ -46,7 +46,7 @@ import java.util.stream.Collectors;
  */
 @DependsRules({
     NormalizeWindow.class,
-    ResolveWindowFunction.class
+    CheckAndStandardizeWindowFunctionAndFrame.class
 })
 public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory {
 
@@ -55,17 +55,9 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
 
         return RuleType.LOGICAL_WINDOW_TO_PHYSICAL_WINDOW_RULE.build(
             logicalWindow().when(LogicalWindow::isNormalized)
-                .when(LogicalWindow::isNormalized)
-                .thenApply(ctx ->
-                resolveWindow(ctx.cascadesContext, ctx.root))
+                .when(LogicalWindow::isChecked)
+                .thenApply(ctx -> resolveWindow(ctx.cascadesContext, ctx.root))
         );
-//        return logicalWindow().then(logicalWindow -> new PhysicalWindow<>(
-//                logicalWindow.getOutputExpressions(),
-//                logicalWindow.getWindowExpressions(),
-//                logicalWindow.getWindowFrameGroup(),
-//                logicalWindow.getLogicalProperties(),
-//                logicalWindow.child())
-//            ).toRule(RuleType.LOGICAL_WINDOW_TO_PHYSICAL_WINDOW_RULE);
     }
 
     /**
@@ -102,7 +94,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     }
 
     /* ********************************************************************************************
-     * create LogicalWindow and LogicalSort
+     * create PhyscialWindow and PhysicalSort
      * ******************************************************************************************** */
 
     private Plan createLogicalPlanNodeForWindowFunctions(Plan root, OrderKeyGroup orderKeyGroup,
@@ -131,8 +123,8 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
                 return new OrderKey(partitionKey, true, false);
             }).collect(Collectors.toList()));
             isAnalyticSort = true;
-            System.out.println(isAnalyticSort);
         }
+        System.out.println(isAnalyticSort);
 
         if (!orderKeyGroup.orderKeyList.isEmpty()) {
             keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeyList);
@@ -384,6 +376,21 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
                 }
             }
             return false;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("PartitionKeys: ").append(partitionKeyList.stream()
+                    .map(Expression::toString)
+                    .collect(Collectors.joining(", ", "", ", ")));
+
+            sb.append("OrderKeys: ").append(orderKeyList.stream()
+                    .map(OrderKey::toString)
+                    .collect(Collectors.joining(", ", "", ", ")));
+
+            sb.append("WindowFrame: ").append(windowFrame);
+            return sb.toString();
         }
 
         public List<Expression> getPartitionKeyList() {

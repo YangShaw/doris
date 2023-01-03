@@ -519,7 +519,9 @@ public class BindSlotReference implements AnalysisRuleFactory {
                 } else {
                     newOKList = Optional.empty();
                 }
-                expression.withChildren(new Window(window.child(), newPKList, newOKList, window.getWindowFrame()));
+                return bind((NamedExpression) expression.withChildren(
+                    new Window(window.child(), newPKList, newOKList, window.getWindowFrame())),
+                    inputs, logicalWindow, cascadesContext);
             }
             return bind(expression, inputs, logicalWindow, cascadesContext);
         }).collect(Collectors.toList());
