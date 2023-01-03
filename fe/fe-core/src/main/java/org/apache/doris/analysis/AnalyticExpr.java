@@ -1002,4 +1002,8 @@ public class AnalyticExpr extends Expr {
         }
         return Joiner.on(", ").join(strings);
     }
+
+    @Override
+    public void finalizeImplForNereids() throws AnalysisException {
+    }
 }

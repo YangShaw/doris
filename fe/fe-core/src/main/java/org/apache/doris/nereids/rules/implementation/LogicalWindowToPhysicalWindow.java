@@ -124,7 +124,6 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             }).collect(Collectors.toList()));
             isAnalyticSort = true;
         }
-        System.out.println(isAnalyticSort);
 
         if (!orderKeyGroup.orderKeyList.isEmpty()) {
             keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeyList);
@@ -137,7 +136,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
                     .build()
                     .transform(logicalSort, ctx)
                     .get(0);
-            return physicalQuickSort;
+            return physicalQuickSort.withAnalyticSort(isAnalyticSort);
 
             // todo: check if this group contains the sorting requirements caused by partitionKeys; if not,
             //  this sorting is consistent with the sorting processing logic caused by the normal order by clause

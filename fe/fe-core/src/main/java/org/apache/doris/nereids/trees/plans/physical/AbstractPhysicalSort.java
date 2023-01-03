@@ -40,6 +40,8 @@ public abstract class AbstractPhysicalSort<CHILD_TYPE extends Plan> extends Phys
 
     protected final List<OrderKey> orderKeys;
 
+    protected boolean isAnalyticSort = false;
+
     /**
      * Constructor of AbstractPhysicalSort.
      */
@@ -62,6 +64,10 @@ public abstract class AbstractPhysicalSort<CHILD_TYPE extends Plan> extends Phys
 
     public List<OrderKey> getOrderKeys() {
         return orderKeys;
+    }
+
+    public boolean isAnalyticSort() {
+        return isAnalyticSort;
     }
 
     @Override

@@ -349,7 +349,9 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
 
     // not sure whether it is correct to use visitOrderKey to resolve this case
     public OrderByElement withOrderKeyInWindow(OrderKey orderKey, PlanTranslatorContext context) {
-        return new OrderByElement(translate(orderKey.getExpr(), context), orderKey.isAsc(), orderKey.isNullFirst());
+        return new OrderByElement(
+            orderKey.getExpr().accept(this, context),
+            orderKey.isAsc(), orderKey.isNullFirst());
     }
 
     /**
@@ -431,9 +433,11 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
         );
 
         boolean isMergeFn = false;
-
+        FunctionCallExpr functionCallExpr =
+                new FunctionCallExpr(catalogFunction, windowFnParams, windowFnParams, isMergeFn, catalogArguments);
+        functionCallExpr.setIsAnalyticFnCall(true);
         // create catalog FunctionCallExpr without analyze again
-        return new FunctionCallExpr(catalogFunction, windowFnParams, windowFnParams, isMergeFn, catalogArguments);
+        return functionCallExpr;
 
     }
 

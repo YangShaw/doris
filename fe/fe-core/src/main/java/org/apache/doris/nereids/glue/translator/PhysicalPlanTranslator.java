@@ -62,6 +62,7 @@ import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
 import org.apache.doris.nereids.trees.plans.AggMode;
 import org.apache.doris.nereids.trees.plans.AggPhase;
@@ -619,6 +620,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
     @Override
     public PlanFragment visitPhysicalWindow(PhysicalWindow<? extends Plan> physicalWindow,
                                             PlanTranslatorContext context) {
+        PlanFragment inputPlanFragment = physicalWindow.child(0).accept(this, context);
 
         // variable in Nereids
         WindowFrameGroup windowFrameGroup = physicalWindow.getWindowFrameGroup();
@@ -630,7 +632,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
 
         // translate to old optimizer variable
         AnalyticExpr analyticExpr = (AnalyticExpr) ExpressionTranslator.translate(
-            new Window(null, Optional.of(partitionKeyList), Optional.of(orderKeyList),
+            new Window(new Rank(), Optional.of(partitionKeyList), Optional.of(orderKeyList),
                     Optional.of(windowFrame)), context);
 
         List<Expr> partitionExprs = analyticExpr.getPartitionExprs();
@@ -641,7 +643,9 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                 .collect(Collectors.toList());
 
         // generate tuple desc
-        TupleDescriptor intermediateTupleDesc = context.generateTupleDesc();
+        List<Slot> slotList = Lists.newArrayList();
+        slotList.addAll(physicalWindow.getOutput());
+        TupleDescriptor intermediateTupleDesc = generateTupleDesc(slotList, null, context);
         TupleDescriptor outputTupleDesc = intermediateTupleDesc;
 
         PlanFragment child = physicalWindow.child().accept(this, context);
@@ -658,10 +662,10 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                 null,
                 null,
                 null,
-                intermediateTupleDesc
+                outputTupleDesc
         );
-        Preconditions.checkArgument(analyticEvalNode != null);
-        return null;
+        inputPlanFragment.addPlanRoot(analyticEvalNode);
+        return inputPlanFragment;
     }
 
     // not sure whether it is correct to use visitOrderKey to resolve this case
@@ -718,7 +722,9 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // 4. fill in SortInfo members
         SortInfo sortInfo = new SortInfo(newOrderingExprList, ascOrderList, nullsFirstParamList, tupleDesc);
         PlanNode childNode = childFragment.getPlanRoot();
-        SortNode sortNode = new SortNode(context.nextPlanNodeId(), childNode, sortInfo, true);
+        boolean isTopN = sort instanceof PhysicalTopN ? true : false;
+        SortNode sortNode = new SortNode(context.nextPlanNodeId(), childNode, sortInfo, isTopN);
+        sortNode.setIsAnalyticSort(sort.isAnalyticSort());
         sortNode.finalizeForNereids(tupleDesc, sortTupleOutputList, oldOrderingExprList);
         if (sort.getStats() != null) {
             sortNode.setCardinality((long) sort.getStats().getRowCount());

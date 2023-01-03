@@ -22,9 +22,7 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
-import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
-import org.apache.doris.nereids.types.coercion.AbstractDataType;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -47,7 +45,7 @@ public class Rank extends WindowFunction implements AlwaysNotNullable, LeafExpre
 
     @Override
     public FunctionSignature searchSignature(List<FunctionSignature> signatures) {
-        return null;
+        return signatures.get(0);
     }
 
     @Override
@@ -57,17 +55,7 @@ public class Rank extends WindowFunction implements AlwaysNotNullable, LeafExpre
     }
 
     @Override
-    public List<AbstractDataType> expectedInputTypes() {
-        return ImmutableList.of();
-    }
-
-    @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitRank(this, context);
-    }
-
-    @Override
-    public DataType getDataType() {
-        return IntegerType.INSTANCE;
     }
 }
