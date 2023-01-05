@@ -21,6 +21,8 @@ import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.properties.PhysicalProperties;
+import org.apache.doris.nereids.properties.RequireProperties;
+import org.apache.doris.nereids.properties.RequirePropertiesSupplier;
 import org.apache.doris.nereids.rules.implementation.LogicalWindowToPhysicalWindow.WindowFrameGroup;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
@@ -40,30 +42,40 @@ import java.util.Optional;
 /**
  * physical node for window function
  */
-public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD_TYPE> implements Window {
+public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD_TYPE> implements Window,
+        RequirePropertiesSupplier<PhysicalWindow<CHILD_TYPE>> {
 
     private List<NamedExpression> outputExpressions;
     private List<NamedExpression> windowExpressions;
     private List<Expression> partitionSpec;
     private List<OrderKey> orderSpec;
     private WindowFrameGroup windowFrameGroup;
+    private boolean needAnalyticSort;
+    private RequireProperties requireProperties;
 
     public PhysicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions,
                           WindowFrameGroup windowFrameGroup, LogicalProperties logicalProperties, CHILD_TYPE child) {
-        this(outputExpressions, windowExpressions, windowFrameGroup, Optional.empty(), logicalProperties, child);
+        this(outputExpressions, windowExpressions, windowFrameGroup, false, null,
+                Optional.empty(), logicalProperties, child);
     }
 
+    /** constructor for PhysicalWindow */
     public PhysicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions,
-                          WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
+                          WindowFrameGroup windowFrameGroup, boolean needAnalyticSort,
+                          RequireProperties requireProperties, Optional<GroupExpression> groupExpression,
                           LogicalProperties logicalProperties, CHILD_TYPE child) {
         super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, child);
         this.outputExpressions = outputExpressions;
         this.windowExpressions = windowExpressions;
         this.windowFrameGroup = windowFrameGroup;
+        this.needAnalyticSort = needAnalyticSort;
+        this.requireProperties = requireProperties;
     }
 
+    /** constructor for PhysicalWindow */
     public PhysicalWindow(List<NamedExpression> outputExpressions, List<NamedExpression> windowExpressions,
-                          WindowFrameGroup windowFrameGroup, Optional<GroupExpression> groupExpression,
+                          WindowFrameGroup windowFrameGroup, boolean needAnalyticSort,
+                          RequireProperties requireProperties, Optional<GroupExpression> groupExpression,
                           LogicalProperties logicalProperties, PhysicalProperties physicalProperties,
                           StatsDeriveResult statsDeriveResult, CHILD_TYPE child) {
         super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, physicalProperties,
@@ -71,6 +83,8 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
         this.outputExpressions = outputExpressions;
         this.windowExpressions = windowExpressions;
         this.windowFrameGroup = windowFrameGroup;
+        this.needAnalyticSort = needAnalyticSort;
+        this.requireProperties = requireProperties;
     }
 
     @Override
@@ -94,11 +108,8 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
         return windowFrameGroup;
     }
 
-    @Override
-    public Plan withChildren(List<Plan> children) {
-        Preconditions.checkState(children.size() == 1);
-        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, getLogicalProperties(),
-                children.get(0));
+    public boolean isNeedAnalyticSort() {
+        return needAnalyticSort;
     }
 
     @Override
@@ -112,30 +123,12 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
     }
 
     @Override
-    public Plan withGroupExpression(Optional<GroupExpression> groupExpression) {
-        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, groupExpression,
-                getLogicalProperties(), child());
-    }
-
-    @Override
-    public Plan withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
-        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, Optional.empty(),
-                logicalProperties.get(), child());
-    }
-
-    @Override
-    public PhysicalPlan withPhysicalPropertiesAndStats(PhysicalProperties physicalProperties,
-                                                       StatsDeriveResult statsDeriveResult) {
-        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, Optional.empty(),
-                getLogicalProperties(), physicalProperties, statsDeriveResult, child());
-    }
-
-    @Override
     public String toString() {
         return Utils.toSqlString("PhysicalWindow",
             "outputExpressions", outputExpressions,
             "windowExpressions", windowExpressions,
-            "windowFrameGroup", windowFrameGroup
+            "windowFrameGroup", windowFrameGroup,
+            "requiredProperties", requireProperties
         );
     }
 
@@ -150,11 +143,62 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
         PhysicalWindow<?> that = (PhysicalWindow<?>) o;
         return Objects.equals(outputExpressions, that.outputExpressions)
             && Objects.equals(windowExpressions, that.windowExpressions)
-            && Objects.equals(windowFrameGroup, that.windowFrameGroup);
+            && Objects.equals(windowFrameGroup, that.windowFrameGroup)
+            && Objects.equals(requireProperties, that.requireProperties);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(outputExpressions, windowExpressions, windowFrameGroup);
+        return Objects.hash(outputExpressions, windowExpressions, windowFrameGroup, requireProperties);
+    }
+
+    @Override
+    public RequireProperties getRequireProperties() {
+        return requireProperties;
+    }
+
+    @Override
+    public Plan withChildren(List<Plan> children) {
+        Preconditions.checkState(children.size() == 1);
+        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, needAnalyticSort,
+            requireProperties, Optional.empty(), getLogicalProperties(), children.get(0));
+    }
+
+    public PhysicalWindow<Plan> withAnalyticSort(boolean needAnalyticSort) {
+        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, needAnalyticSort,
+            requireProperties, Optional.empty(), getLogicalProperties(), child());
+    }
+
+    @Override
+    public Plan withGroupExpression(Optional<GroupExpression> groupExpression) {
+        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, needAnalyticSort,
+            requireProperties, groupExpression, getLogicalProperties(), child());
+    }
+
+    @Override
+    public Plan withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
+        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, needAnalyticSort,
+            requireProperties, Optional.empty(), logicalProperties.get(), child());
+    }
+
+    @Override
+    public PhysicalPlan withPhysicalPropertiesAndStats(PhysicalProperties physicalProperties,
+                                                       StatsDeriveResult statsDeriveResult) {
+        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, needAnalyticSort,
+            requireProperties, Optional.empty(), getLogicalProperties(), physicalProperties,
+            statsDeriveResult, child());
+    }
+
+    @Override
+    public PhysicalWindow<Plan> withRequireAndChildren(RequireProperties requireProperties, List<Plan> children) {
+        Preconditions.checkArgument(children.size() == 1);
+        return withRequirePropertiesAndChild(requireProperties, children.get(0));
+    }
+
+    public <C extends Plan> PhysicalWindow<C> withRequirePropertiesAndChild(RequireProperties requireProperties,
+                                                                            C newChild) {
+        return new PhysicalWindow<>(outputExpressions, windowExpressions, windowFrameGroup, needAnalyticSort,
+            requireProperties, Optional.empty(), getLogicalProperties(), physicalProperties,
+            statsDeriveResult, newChild);
     }
 }

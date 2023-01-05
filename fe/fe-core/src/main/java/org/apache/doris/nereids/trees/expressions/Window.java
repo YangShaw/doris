@@ -87,10 +87,6 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
         return windowFrame;
     }
 
-    public void setPartitionKeyList(List<Expression> partitionKeyList) {
-        this.partitionKeyList = Optional.ofNullable(partitionKeyList);
-    }
-
     public Window withWindowFrame(WindowFrame windowFrame) {
         return new Window(child(), partitionKeyList, orderKeyList, Optional.of(windowFrame));
     }

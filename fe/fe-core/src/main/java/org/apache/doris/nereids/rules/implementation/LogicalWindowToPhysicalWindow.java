@@ -20,6 +20,9 @@ package org.apache.doris.nereids.rules.implementation;
 import org.apache.doris.nereids.CascadesContext;
 import org.apache.doris.nereids.annotation.DependsRules;
 import org.apache.doris.nereids.properties.OrderKey;
+import org.apache.doris.nereids.properties.OrderSpec;
+import org.apache.doris.nereids.properties.PhysicalProperties;
+import org.apache.doris.nereids.properties.RequireProperties;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.logical.CheckAndStandardizeWindowFunctionAndFrame;
@@ -42,7 +45,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Implementation rule that convert logical window to physical window.
+ * Implementation rule that convert logical window to physical window, and add RequiredProperties
  */
 @DependsRules({
     NormalizeWindow.class,
@@ -94,27 +97,56 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     }
 
     /* ********************************************************************************************
-     * create PhyscialWindow and PhysicalSort
+     * create PhysicalWindow and PhysicalSort
      * ******************************************************************************************** */
 
     private Plan createLogicalPlanNodeForWindowFunctions(Plan root, OrderKeyGroup orderKeyGroup,
                                                                 LogicalWindow logicalWindow, CascadesContext ctx) {
         // PhysicalSort node for orderKeys; if there exists no orderKey, newRoot = root
-        Plan newRoot = createPhysicalSortNode(root, orderKeyGroup, ctx);
+        // Plan newRoot = createPhysicalSortNode(root, orderKeyGroup, ctx);
+        Plan newRoot = root;
+
+        boolean isAnalyticSort = true;
+        if (orderKeyGroup.partitionKeyList.isEmpty()) {
+            isAnalyticSort = false;
+        }
+
+        // we will not add PhysicalSort in this step, but generate it if necessary with the ability of enforcer by
+        // setting RequiredProperties
+        List<OrderKey> requiredOrderKeys = generateKeysNeedToBeSorted(orderKeyGroup);
 
         // PhysicalWindow node for window functions; at least one PhysicalWindow node will be added
         for (WindowFrameGroup windowFrameGroup : orderKeyGroup.groupList) {
-            newRoot = createPhysicalWindow(newRoot, windowFrameGroup, logicalWindow);
+            newRoot = createPhysicalWindow(newRoot, windowFrameGroup, logicalWindow, isAnalyticSort, requiredOrderKeys);
         }
 
         return newRoot;
+    }
+
+    private List<OrderKey> generateKeysNeedToBeSorted(OrderKeyGroup orderKeyGroup) {
+        // all keys that need to be sorted, which includes BOTH partitionKeys and orderKeys from this group
+        List<OrderKey> keysNeedToBeSortedList = Lists.newArrayList();
+
+        // used as SortNode.isAnalyticSort, but it is unnecessary to add it in LogicalSort
+        if (!orderKeyGroup.partitionKeyList.isEmpty()) {
+            keysNeedToBeSortedList.addAll(orderKeyGroup.partitionKeyList.stream().map(partitionKey -> {
+                // todo: haven't support isNullFirst, and its default value is false(see AnalyticPlanner#line403,
+                //  but in LogicalPlanBuilder, its default value is true)
+                return new OrderKey(partitionKey, true, false);
+            }).collect(Collectors.toList()));
+        }
+
+        if (!orderKeyGroup.orderKeyList.isEmpty()) {
+            keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeyList);
+        }
+        return keysNeedToBeSortedList;
     }
 
     private Plan createPhysicalSortNode(Plan root, OrderKeyGroup orderKeyGroup, CascadesContext ctx) {
         // all keys that need to be sorted, which includes BOTH partitionKeys and orderKeys from this group
         List<OrderKey> keysNeedToBeSortedList = Lists.newArrayList();
 
-        // todo: used as SortNode.isAnalyticSort, but we haven't add it in LogicalSort
+        // used as SortNode.isAnalyticSort, but it is unnecessary to add it in LogicalSort
         boolean isAnalyticSort = false;
         if (!orderKeyGroup.partitionKeyList.isEmpty()) {
             keysNeedToBeSortedList.addAll(orderKeyGroup.partitionKeyList.stream().map(partitionKey -> {
@@ -146,14 +178,27 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     }
 
     private PhysicalWindow createPhysicalWindow(Plan root, WindowFrameGroup windowFrameGroup,
-                                                LogicalWindow logicalWindow) {
-        // todo: partitionByEq and orderByEq
-        return new PhysicalWindow<>(
+                                                LogicalWindow logicalWindow, boolean isAnalyticSort,
+                                                List<OrderKey> requiredOrderKeys) {
+        // todo: partitionByEq and orderByEq?
+        // requiredProperties:
+        // Distribution: partitionKeys
+        // Order: requiredOrderKeys
+        PhysicalWindow physicalWindow = new PhysicalWindow<>(
                 logicalWindow.getOutputExpressions(),
                 logicalWindow.getWindowExpressions(),
                 windowFrameGroup,
                 logicalWindow.getLogicalProperties(),
                 root);
+        // todo: add isAnalyticSort to physicalWindow
+
+        // todo: add new ShuffleType for window, like ShuffleType.WINDOW
+        //PhysicalProperties properties = PhysicalProperties.createHash(
+        //        windowFrameGroup.partitionKeyList, DistributionSpecHash.ShuffleType.ENFORCED);
+        PhysicalProperties properties = new PhysicalProperties(new OrderSpec(requiredOrderKeys));
+        // properties = properties.withOrderSpec(new OrderSpec(requiredOrderKeys));
+        RequireProperties requireProperties = RequireProperties.of(properties);
+        return physicalWindow.withAnalyticSort(isAnalyticSort).withRequirePropertiesAndChild(requireProperties, root);
     }
 
     /* ********************************************************************************************
@@ -281,10 +326,11 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     /**
      * [This comment references AnalyticPlanner.orderGroups()]
      *
-     * Order partition groups (and the sort groups within them) by increasing
+     * Order partition groups (and the SortGroups, WindowFrameGroups within them) by increasing
      * totalOutputTupleSize. This minimizes the total volume of data that needs to be
      * repartitioned and sorted.
-     * Also move the non-partitioning partition group to the end.
+     *
+     * Always move the non-partitioning partition group to the end, if it exists.
      */
     private void sortPartitionKeyGroups(List<PartitionKeyGroup> partitionKeyGroupList) {
 
@@ -428,6 +474,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
 
         /**
          *  check if this okg isPrefixOf other, which means that other okg can cover this
+         *  e.g. (a, b) is a prefix of (a, b, c), but is NOT a prefix of (b, a, c) or (b, c)
          */
         public boolean isPrefixOf(OrderKeyGroup otherOkg) {
             if (orderKeyList.size() > otherOkg.orderKeyList.size()) {
@@ -445,6 +492,9 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             return true;
         }
 
+        /**
+         * add all of otherOkg's WindowFrameGroups to this groupList
+         */
         public void absorb(OrderKeyGroup otherOkg) {
             groupList.addAll(otherOkg.groupList);
         }

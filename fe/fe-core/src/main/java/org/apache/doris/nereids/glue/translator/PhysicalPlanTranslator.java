@@ -22,7 +22,9 @@ import org.apache.doris.analysis.AnalyticExpr;
 import org.apache.doris.analysis.AnalyticWindow;
 import org.apache.doris.analysis.BaseTableRef;
 import org.apache.doris.analysis.BinaryPredicate;
+import org.apache.doris.analysis.BoolLiteral;
 import org.apache.doris.analysis.Expr;
+import org.apache.doris.analysis.ExprSubstitutionMap;
 import org.apache.doris.analysis.FunctionCallExpr;
 import org.apache.doris.analysis.GroupByClause.GroupingType;
 import org.apache.doris.analysis.GroupingInfo;
@@ -69,6 +71,7 @@ import org.apache.doris.nereids.trees.plans.AggPhase;
 import org.apache.doris.nereids.trees.plans.JoinType;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PreAggStatus;
+import org.apache.doris.nereids.trees.plans.algebra.Sort;
 import org.apache.doris.nereids.trees.plans.physical.AbstractPhysicalJoin;
 import org.apache.doris.nereids.trees.plans.physical.AbstractPhysicalSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalAssertNumRows;
@@ -82,6 +85,7 @@ import org.apache.doris.nereids.trees.plans.physical.PhysicalHashAggregate;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalHashJoin;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalIntersect;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalLimit;
+import org.apache.doris.nereids.trees.plans.physical.PhysicalLocalQuickSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalNestedLoopJoin;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalOlapScan;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalOneRowRelation;
@@ -620,8 +624,6 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
     @Override
     public PlanFragment visitPhysicalWindow(PhysicalWindow<? extends Plan> physicalWindow,
                                             PlanTranslatorContext context) {
-        PlanFragment inputPlanFragment = physicalWindow.child(0).accept(this, context);
-
         // variable in Nereids
         WindowFrameGroup windowFrameGroup = physicalWindow.getWindowFrameGroup();
 
@@ -630,10 +632,24 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         WindowFrame windowFrame = windowFrameGroup.getWindowFrame();
         List<NamedExpression> windowFunctionList = windowFrameGroup.getGroupList();
 
+        PlanFragment inputPlanFragment;
+        // generate inputPlanFragment here for translating Window Expression
+        // 传递相关属性到下层属于AnalyticSort的节点
+        // todo: trick, need to be refactored in a more concise way
+        if (physicalWindow.isNeedAnalyticSort() && physicalWindow.child() instanceof Sort) {
+            PhysicalLocalQuickSort sort = (PhysicalLocalQuickSort) physicalWindow.child();
+            // inputPlanFragment = visitAbstractPhysicalSort(sort, context);
+            // PhysicalLocalQuickSort have not been visited here
+            context.setIsAnalyticSortNode(sort, true);
+            context.setPartitionKeysInSort(sort, partitionKeyList);
+        }
+
+        inputPlanFragment = physicalWindow.child(0).accept(this, context);
+
         // translate to old optimizer variable
         AnalyticExpr analyticExpr = (AnalyticExpr) ExpressionTranslator.translate(
             new Window(new Rank(), Optional.of(partitionKeyList), Optional.of(orderKeyList),
-                    Optional.of(windowFrame)), context);
+                Optional.of(windowFrame)), context);
 
         List<Expr> partitionExprs = analyticExpr.getPartitionExprs();
         List<OrderByElement> orderByElements = analyticExpr.getOrderByElements();
@@ -648,24 +664,33 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         TupleDescriptor intermediateTupleDesc = generateTupleDesc(slotList, null, context);
         TupleDescriptor outputTupleDesc = intermediateTupleDesc;
 
-        PlanFragment child = physicalWindow.child().accept(this, context);
-
         AnalyticEvalNode analyticEvalNode = new AnalyticEvalNode(
                 context.nextPlanNodeId(),
-                child.getPlanRoot(),
+                inputPlanFragment.getPlanRoot(),
                 analyticFnCalls,
                 partitionExprs,
                 orderByElements,
                 analyticWindow,
                 intermediateTupleDesc,
                 outputTupleDesc,
-                null,
-                null,
-                null,
+                new ExprSubstitutionMap(),
+                new BoolLiteral(true),
+                new BoolLiteral(true),
                 outputTupleDesc
         );
-        inputPlanFragment.addPlanRoot(analyticEvalNode);
-        return inputPlanFragment;
+
+        if (partitionKeyList.isEmpty() && orderKeyList.isEmpty()) {
+            PlanFragment fragment = inputPlanFragment;
+            if (inputPlanFragment.isPartitioned()) {
+                fragment = createParentFragment(inputPlanFragment, DataPartition.UNPARTITIONED, context);
+            }
+            fragment.addPlanRoot(analyticEvalNode);
+            return fragment;
+        } else {
+            analyticEvalNode.setNumInstances(inputPlanFragment.getPlanRoot().getNumInstances());
+            inputPlanFragment.addPlanRoot(analyticEvalNode);
+            return inputPlanFragment;
+        }
     }
 
     // not sure whether it is correct to use visitOrderKey to resolve this case
@@ -724,10 +749,30 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         PlanNode childNode = childFragment.getPlanRoot();
         boolean isTopN = sort instanceof PhysicalTopN ? true : false;
         SortNode sortNode = new SortNode(context.nextPlanNodeId(), childNode, sortInfo, isTopN);
-        sortNode.setIsAnalyticSort(sort.isAnalyticSort());
+        // sortNode.setIsAnalyticSort(sort.isAnalyticSort());
         sortNode.finalizeForNereids(tupleDesc, sortTupleOutputList, oldOrderingExprList);
         if (sort.getStats() != null) {
             sortNode.setCardinality((long) sort.getStats().getRowCount());
+        }
+        // 5. check and resolve analyticSortNode
+        if (context.containsIsAnalyticSortNode(sort) && context.getIsAnalyticSortNode(sort)) {
+            PlanFragment analyticFragment = childFragment;
+            List<Expression> partitionKeys = context.getPartitionKeysInSort(sort);
+            List<Expr> partitionExprs = partitionKeys.stream()
+                    .map(e -> ExpressionTranslator.translate(e, context))
+                    .collect(Collectors.toList());
+            DataPartition inputPartition = DataPartition.UNPARTITIONED;
+
+            if (!partitionExprs.isEmpty()) {
+                inputPartition = new DataPartition(TPartitionType.HASH_PARTITIONED, partitionExprs);
+            }
+            sortNode.setInputPartition(inputPartition);
+
+            if (!childFragment.getDataPartition().equals(inputPartition)) {
+                analyticFragment = createParentFragment(childFragment, inputPartition, context);
+            }
+            analyticFragment.addPlanRoot(sortNode);
+            return analyticFragment;
         }
         childFragment.addPlanRoot(sortNode);
         return childFragment;
@@ -1171,6 +1216,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         inputPlanNode.setOutputTupleDesc(tupleDescriptor);
 
         if (inputPlanNode instanceof OlapScanNode) {
+            // prune column in OlapScanNode
             updateChildSlotsMaterialization(inputPlanNode, requiredSlotIdList, context);
             return inputFragment;
         }
