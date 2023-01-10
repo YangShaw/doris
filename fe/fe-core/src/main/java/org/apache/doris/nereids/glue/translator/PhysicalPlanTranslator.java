@@ -23,11 +23,13 @@ import org.apache.doris.analysis.AnalyticWindow;
 import org.apache.doris.analysis.BaseTableRef;
 import org.apache.doris.analysis.BinaryPredicate;
 import org.apache.doris.analysis.BoolLiteral;
+import org.apache.doris.analysis.CompoundPredicate;
 import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.ExprSubstitutionMap;
 import org.apache.doris.analysis.FunctionCallExpr;
 import org.apache.doris.analysis.GroupByClause.GroupingType;
 import org.apache.doris.analysis.GroupingInfo;
+import org.apache.doris.analysis.IsNullPredicate;
 import org.apache.doris.analysis.OrderByElement;
 import org.apache.doris.analysis.SlotDescriptor;
 import org.apache.doris.analysis.SlotId;
@@ -661,8 +663,26 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // generate tuple desc
         List<Slot> slotList = Lists.newArrayList();
         slotList.addAll(physicalWindow.getOutput());
+        // TupleDescriptor inputTupleDesc = generateTupleDesc(slotList, null, context);
         TupleDescriptor intermediateTupleDesc = generateTupleDesc(slotList, null, context);
         TupleDescriptor outputTupleDesc = intermediateTupleDesc;
+
+        // ExprSubstitutionMap outputSmap;
+        // if (inputPlanFragment.getPlanRoot() instanceof SortNode) {
+        //    SortNode sortNode = (SortNode) inputPlanFragment.getPlanRoot();
+        //    outputSmap = sortNode.getOutputSmap();
+        //} else {
+        //    // todo: get outputSmap across AnalyticEvalNode
+        //    outputSmap = new ExprSubstitutionMap();
+        //}
+
+        Expr partitionExprsIsNullable = partitionExprs.isEmpty() ? null : windowExprsIsNullable(
+                partitionKeyList, partitionExprs, slotList, intermediateTupleDesc);
+
+        Expr orderElementsIsNullable = orderByElements.isEmpty() ? null : windowExprsIsNullable(
+                orderKeyList.stream().map(order -> order.getExpr()).collect(Collectors.toList()),
+                orderByElements.stream().map(order -> order.getExpr()).collect(Collectors.toList()),
+                slotList, intermediateTupleDesc);
 
         AnalyticEvalNode analyticEvalNode = new AnalyticEvalNode(
                 context.nextPlanNodeId(),
@@ -674,8 +694,8 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                 intermediateTupleDesc,
                 outputTupleDesc,
                 new ExprSubstitutionMap(),
-                new BoolLiteral(true),
-                new BoolLiteral(true),
+                partitionExprsIsNullable,
+                orderElementsIsNullable,
                 outputTupleDesc
         );
 
@@ -693,10 +713,46 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         }
     }
 
-    // not sure whether it is correct to use visitOrderKey to resolve this case
-    private OrderByElement withOrderKeyInWindow(OrderKey orderKey, PlanTranslatorContext context) {
-        return new OrderByElement(ExpressionTranslator.translate(orderKey.getExpr(), context),
-                orderKey.isAsc(), orderKey.isNullFirst());
+    private Expr windowExprsIsNullable(List<Expression> expressions, List<Expr> exprs, List<Slot> slotLists,
+                                       TupleDescriptor tupleDescriptor) {
+        // List<Expr> lfsList = Lists.newArrayList();
+        // List<Expr> rfsList = Lists.newArrayList();
+
+        // construct map
+        Map<Slot, Integer> slotToIndex = new HashMap<>();
+        for (int i = 0; i < slotLists.size(); i++) {
+            slotToIndex.putIfAbsent(slotLists.get(i), i);
+        }
+
+        Map<Integer, Expr> indexToSlotRef = new HashMap<>();
+        for (int i = 0; i < expressions.size(); i++) {
+            int index = slotToIndex.get(expressions.get(i));
+            Expr slotRef = new SlotRef(tupleDescriptor.getSlots().get(index));
+            indexToSlotRef.put(i, slotRef);
+            // rfsList.add(slotRef);
+        }
+
+        return windowExprsIsNullable(exprs, indexToSlotRef, 0);
+    }
+
+    private Expr windowExprsIsNullable(List<Expr> exprs, Map<Integer, Expr> indexToSlotRef, int i) {
+        if (i > exprs.size() - 1) {
+            return new BoolLiteral(true);
+        }
+
+        Expr lhs = exprs.get(i);
+        Expr rhs = indexToSlotRef.get(i);
+
+        Expr bothNull = new CompoundPredicate(CompoundPredicate.Operator.AND,
+                new IsNullPredicate(lhs, false), new IsNullPredicate(rhs, false));
+        Expr lhsEqRhsNotNull = new CompoundPredicate(CompoundPredicate.Operator.AND,
+                new CompoundPredicate(CompoundPredicate.Operator.AND,
+                        new IsNullPredicate(lhs, true), new IsNullPredicate(rhs, true)),
+                        new BinaryPredicate(BinaryPredicate.Operator.EQ, lhs, rhs));
+
+        Expr remainder = windowExprsIsNullable(exprs, indexToSlotRef, i + 1);
+        return new CompoundPredicate(CompoundPredicate.Operator.AND,
+                new CompoundPredicate(CompoundPredicate.Operator.OR, bothNull, lhsEqRhsNotNull), remainder);
     }
 
     @Override
@@ -755,6 +811,9 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
             sortNode.setCardinality((long) sort.getStats().getRowCount());
         }
         // 5. check and resolve analyticSortNode
+        // if (sort.child(0) instanceof PhysicalDistribute) {
+        //    // todo: other cases?
+        // }
         if (context.containsIsAnalyticSortNode(sort) && context.getIsAnalyticSortNode(sort)) {
             PlanFragment analyticFragment = childFragment;
             List<Expression> partitionKeys = context.getPartitionKeysInSort(sort);

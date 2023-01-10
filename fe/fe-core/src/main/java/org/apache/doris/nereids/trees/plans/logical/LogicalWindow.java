@@ -134,12 +134,12 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         return builder.build();
     }
 
-    private List<Expression> extractExpressionsFromWindow(List<NamedExpression> windowExpressions) {
-        return windowExpressions.stream().map(expression -> expression.child(0))
-            .map(org.apache.doris.nereids.trees.expressions.Window.class::cast)
-            .flatMap(window -> window.getExpressions().stream())
-            .collect(Collectors.toList());
-    }
+    //    private List<Expression> extractExpressionsFromWindow(List<NamedExpression> windowExpressions) {
+    //        return windowExpressions.stream().map(expression -> expression.child(0))
+    //            .map(org.apache.doris.nereids.trees.expressions.Window.class::cast)
+    //            .flatMap(window -> window.getExpressions().stream())
+    //            .collect(Collectors.toList());
+    //    }
 
     @Override
     public String toString() {
@@ -177,9 +177,12 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
 
     @Override
     public List<Slot> computeOutput() {
-        return outputExpressions.stream()
-            .map(NamedExpression::toSlot)
-            .collect(ImmutableList.toImmutableList());
+        ImmutableList.Builder<Slot> builder = new ImmutableList.Builder<>();
+        builder.addAll(outputExpressions.stream()
+                .map(NamedExpression::toSlot)
+                .collect(ImmutableList.toImmutableList()));
+        builder.addAll(child().getOutput());
+        return builder.build();
     }
 
     @Override

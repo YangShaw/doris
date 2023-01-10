@@ -19,7 +19,6 @@ package org.apache.doris.nereids.trees.plans.physical;
 
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
-import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.properties.PhysicalProperties;
 import org.apache.doris.nereids.properties.RequireProperties;
 import org.apache.doris.nereids.properties.RequirePropertiesSupplier;
@@ -34,10 +33,12 @@ import org.apache.doris.nereids.util.Utils;
 import org.apache.doris.statistics.StatsDeriveResult;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * physical node for window function
@@ -47,8 +48,6 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
 
     private List<NamedExpression> outputExpressions;
     private List<NamedExpression> windowExpressions;
-    private List<Expression> partitionSpec;
-    private List<OrderKey> orderSpec;
     private WindowFrameGroup windowFrameGroup;
     private boolean needAnalyticSort;
     private RequireProperties requireProperties;
@@ -96,14 +95,6 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
         return windowExpressions;
     }
 
-    public List<Expression> getPartitionSpec() {
-        return partitionSpec;
-    }
-
-    public List<OrderKey> getOrderSpec() {
-        return orderSpec;
-    }
-
     public WindowFrameGroup getWindowFrameGroup() {
         return windowFrameGroup;
     }
@@ -119,7 +110,16 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
 
     @Override
     public List<? extends Expression> getExpressions() {
-        return outputExpressions;
+        ImmutableList.Builder<Expression> builder = new ImmutableList.Builder<>();
+        builder.addAll(outputExpressions);
+        if (windowExpressions != null) {
+            builder.addAll(extractExpressionsFromWindow(windowExpressions));
+        } else {
+            builder.addAll(extractExpressionsFromWindow(outputExpressions.stream()
+                    .filter(expr -> expr.anyMatch(org.apache.doris.nereids.trees.expressions.Window.class::isInstance))
+                    .collect(Collectors.toList())));
+        }
+        return builder.build();
     }
 
     @Override

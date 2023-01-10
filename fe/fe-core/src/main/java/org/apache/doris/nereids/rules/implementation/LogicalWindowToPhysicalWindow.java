@@ -193,7 +193,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         // todo: add isAnalyticSort to physicalWindow
 
         // todo: add new ShuffleType for window, like ShuffleType.WINDOW
-        //PhysicalProperties properties = PhysicalProperties.createHash(
+        // PhysicalProperties properties = PhysicalProperties.createHash(
         //        windowFrameGroup.partitionKeyList, DistributionSpecHash.ShuffleType.ENFORCED);
         PhysicalProperties properties = new PhysicalProperties(new OrderSpec(requiredOrderKeys));
         // properties = properties.withOrderSpec(new OrderSpec(requiredOrderKeys));

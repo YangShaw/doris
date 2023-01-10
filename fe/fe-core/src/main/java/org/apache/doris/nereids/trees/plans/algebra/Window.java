@@ -17,9 +17,11 @@
 
 package org.apache.doris.nereids.trees.plans.algebra;
 
+import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * interface for LogicalWindow and PhysicalWindow
@@ -27,4 +29,11 @@ import java.util.List;
 public interface Window {
 
     List<NamedExpression> getOutputExpressions();
+
+    default List<Expression> extractExpressionsFromWindow(List<NamedExpression> windowExpressions) {
+        return windowExpressions.stream().map(expression -> expression.child(0))
+            .map(org.apache.doris.nereids.trees.expressions.Window.class::cast)
+            .flatMap(window -> window.getExpressions().stream())
+            .collect(Collectors.toList());
+    }
 }

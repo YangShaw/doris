@@ -662,8 +662,9 @@ public class PlannerTest extends TestWithFeService {
             }
     }
 
+    @Test
     public void testForAnalyticFn() throws Exception {
-        String sql1 = "select first_value(k1) over(order by k2) from db1.tbl1";
+        String sql1 = "select k3, rank() over(partition by substring(k1, 2) order by k2 + 1) from db1.tbl1";
         StmtExecutor stmtExecutor = new StmtExecutor(connectContext, sql1);
         stmtExecutor.execute();
         Planner planner = stmtExecutor.planner();
