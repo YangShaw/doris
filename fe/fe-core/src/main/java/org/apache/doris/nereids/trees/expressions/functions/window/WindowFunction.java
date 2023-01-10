@@ -19,6 +19,10 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
 
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
+import org.apache.doris.nereids.types.DataType;
+import org.apache.doris.nereids.types.VarcharType;
+
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 import java.util.Objects;
@@ -34,6 +38,10 @@ public abstract class WindowFunction extends BoundFunction {
 
     public WindowFunction(String name, List<Expression> children) {
         super(name, children);
+    }
+
+    protected List<DataType> intermediateTypes() {
+        return ImmutableList.of(VarcharType.SYSTEM_DEFAULT);
     }
 
     @Override

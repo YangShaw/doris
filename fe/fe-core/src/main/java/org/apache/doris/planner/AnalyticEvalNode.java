@@ -260,4 +260,8 @@ public class AnalyticEvalNode extends PlanNode {
 
         return output.toString();
     }
+
+    public void finalizeForNereids() {
+        this.substitutedPartitionExprs = partitionExprs;
+    }
 }

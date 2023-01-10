@@ -73,7 +73,6 @@ import org.apache.doris.nereids.trees.plans.AggPhase;
 import org.apache.doris.nereids.trees.plans.JoinType;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PreAggStatus;
-import org.apache.doris.nereids.trees.plans.algebra.Sort;
 import org.apache.doris.nereids.trees.plans.physical.AbstractPhysicalJoin;
 import org.apache.doris.nereids.trees.plans.physical.AbstractPhysicalSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalAssertNumRows;
@@ -87,7 +86,6 @@ import org.apache.doris.nereids.trees.plans.physical.PhysicalHashAggregate;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalHashJoin;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalIntersect;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalLimit;
-import org.apache.doris.nereids.trees.plans.physical.PhysicalLocalQuickSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalNestedLoopJoin;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalOlapScan;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalOneRowRelation;
@@ -635,17 +633,6 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         List<NamedExpression> windowFunctionList = windowFrameGroup.getGroupList();
 
         PlanFragment inputPlanFragment;
-        // generate inputPlanFragment here for translating Window Expression
-        // 传递相关属性到下层属于AnalyticSort的节点
-        // todo: trick, need to be refactored in a more concise way
-        if (physicalWindow.isNeedAnalyticSort() && physicalWindow.child() instanceof Sort) {
-            PhysicalLocalQuickSort sort = (PhysicalLocalQuickSort) physicalWindow.child();
-            // inputPlanFragment = visitAbstractPhysicalSort(sort, context);
-            // PhysicalLocalQuickSort have not been visited here
-            context.setIsAnalyticSortNode(sort, true);
-            context.setPartitionKeysInSort(sort, partitionKeyList);
-        }
-
         inputPlanFragment = physicalWindow.child(0).accept(this, context);
 
         // translate to old optimizer variable
@@ -660,9 +647,12 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                 .map(e -> ExpressionTranslator.translate(e.child(0).child(0), context))
                 .collect(Collectors.toList());
 
+        // get bufferedTupleDesc
+        TupleId bufferedTupleId = findTupleIdForAnalyticNode(inputPlanFragment.getPlanRoot());
+        TupleDescriptor bufferedTupleDesc = context.getTupleDesc(bufferedTupleId);
+
         // generate tuple desc
-        List<Slot> slotList = Lists.newArrayList();
-        slotList.addAll(physicalWindow.getOutput());
+        List<Slot> slotList = Lists.newArrayList(physicalWindow.getOutputSet());
         // TupleDescriptor inputTupleDesc = generateTupleDesc(slotList, null, context);
         TupleDescriptor intermediateTupleDesc = generateTupleDesc(slotList, null, context);
         TupleDescriptor outputTupleDesc = intermediateTupleDesc;
@@ -696,8 +686,9 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                 new ExprSubstitutionMap(),
                 partitionExprsIsNullable,
                 orderElementsIsNullable,
-                outputTupleDesc
+                bufferedTupleDesc
         );
+        analyticEvalNode.finalizeForNereids();
 
         if (partitionKeyList.isEmpty() && orderKeyList.isEmpty()) {
             PlanFragment fragment = inputPlanFragment;
@@ -711,6 +702,13 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
             inputPlanFragment.addPlanRoot(analyticEvalNode);
             return inputPlanFragment;
         }
+    }
+
+    private TupleId findTupleIdForAnalyticNode(PlanNode inputNode) {
+        if (inputNode instanceof AnalyticEvalNode) {
+            return findTupleIdForAnalyticNode(inputNode.getChild(0));
+        }
+        return inputNode.getTupleIds().get(0);
     }
 
     private Expr windowExprsIsNullable(List<Expression> expressions, List<Expr> exprs, List<Slot> slotLists,
@@ -793,6 +791,26 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         outputList.forEach(k -> {
             sortTupleOutputList.add(ExpressionTranslator.translate(k, context));
         });
+
+        // check if it is analyticSort
+        PlanFragment currentFragment;
+        if (childFragment.getPlanRoot() instanceof ExchangeNode) {
+            Preconditions.checkState(sort.child() instanceof PhysicalDistribute,
+                    "When the ExchangeNode is child of AbstractPhysicalSort, "
+                        + "it should be created by PhysicalDistribute, but meet " + sort.child());
+            PhysicalDistribute physicalDistribute = (PhysicalDistribute) sort.child();
+            DataPartition dataPartition = hashSpecToDataPartition(physicalDistribute, context);
+
+            ExchangeNode exchangeNode = (ExchangeNode) childFragment.getPlanRoot();
+            currentFragment = new PlanFragment(context.nextFragmentId(), exchangeNode, dataPartition);
+            childFragment.setOutputPartition(dataPartition);
+            childFragment.setPlanRoot(exchangeNode.getChild(0));
+            childFragment.setDestination(exchangeNode);
+            context.addPlanFragment(currentFragment);
+        } else {
+            currentFragment = childFragment;
+        }
+
         // 2. Generate new Tuple
         TupleDescriptor tupleDesc = generateTupleDesc(outputList, orderKeyList, context, null);
         // 3. Get current slotRef
@@ -802,39 +820,15 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         });
         // 4. fill in SortInfo members
         SortInfo sortInfo = new SortInfo(newOrderingExprList, ascOrderList, nullsFirstParamList, tupleDesc);
-        PlanNode childNode = childFragment.getPlanRoot();
+        PlanNode childNode = currentFragment.getPlanRoot();
         boolean isTopN = sort instanceof PhysicalTopN ? true : false;
         SortNode sortNode = new SortNode(context.nextPlanNodeId(), childNode, sortInfo, isTopN);
-        // sortNode.setIsAnalyticSort(sort.isAnalyticSort());
         sortNode.finalizeForNereids(tupleDesc, sortTupleOutputList, oldOrderingExprList);
         if (sort.getStats() != null) {
             sortNode.setCardinality((long) sort.getStats().getRowCount());
         }
-        // 5. check and resolve analyticSortNode
-        // if (sort.child(0) instanceof PhysicalDistribute) {
-        //    // todo: other cases?
-        // }
-        if (context.containsIsAnalyticSortNode(sort) && context.getIsAnalyticSortNode(sort)) {
-            PlanFragment analyticFragment = childFragment;
-            List<Expression> partitionKeys = context.getPartitionKeysInSort(sort);
-            List<Expr> partitionExprs = partitionKeys.stream()
-                    .map(e -> ExpressionTranslator.translate(e, context))
-                    .collect(Collectors.toList());
-            DataPartition inputPartition = DataPartition.UNPARTITIONED;
-
-            if (!partitionExprs.isEmpty()) {
-                inputPartition = new DataPartition(TPartitionType.HASH_PARTITIONED, partitionExprs);
-            }
-            sortNode.setInputPartition(inputPartition);
-
-            if (!childFragment.getDataPartition().equals(inputPartition)) {
-                analyticFragment = createParentFragment(childFragment, inputPartition, context);
-            }
-            analyticFragment.addPlanRoot(sortNode);
-            return analyticFragment;
-        }
-        childFragment.addPlanRoot(sortNode);
-        return childFragment;
+        currentFragment.addPlanRoot(sortNode);
+        return currentFragment;
     }
 
     /**
@@ -1873,6 +1867,15 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
             }
         }
         return slotReferences;
+    }
+
+    private DataPartition hashSpecToDataPartition(PhysicalDistribute distribute, PlanTranslatorContext context) {
+        Preconditions.checkState(distribute.getDistributionSpec() instanceof DistributionSpecHash);
+        DistributionSpecHash hashSpec = (DistributionSpecHash) distribute.getDistributionSpec();
+        List<Expr> partitions = hashSpec.getOrderedShuffledColumns().stream()
+                .map(exprId -> context.findSlotRef(exprId))
+                .collect(Collectors.toList());
+        return new DataPartition(TPartitionType.HASH_PARTITIONED, partitions);
     }
 
     private Optional<DataPartition> toDataPartition(PhysicalDistribute distribute,

@@ -352,7 +352,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      */
     @Override
     public Rank visitRank(Rank rank, CheckContext ctx) {
-        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
+        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.RANGE,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
 
         checkAndCompleteWindowFrame(requiredFrame, rank.getName());

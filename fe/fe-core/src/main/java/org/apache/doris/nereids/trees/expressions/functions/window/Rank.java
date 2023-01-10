@@ -22,7 +22,7 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
-import org.apache.doris.nereids.types.IntegerType;
+import org.apache.doris.nereids.types.BigIntType;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -40,7 +40,7 @@ public class Rank extends WindowFunction implements AlwaysNotNullable, LeafExpre
 
     @Override
     public List<FunctionSignature> getSignatures() {
-        return ImmutableList.of(FunctionSignature.ret(IntegerType.INSTANCE).args());
+        return ImmutableList.of(FunctionSignature.ret(BigIntType.INSTANCE).args());
     }
 
     @Override

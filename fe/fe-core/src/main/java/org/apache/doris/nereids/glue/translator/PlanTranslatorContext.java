@@ -29,10 +29,8 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.IdGenerator;
 import org.apache.doris.nereids.CascadesContext;
 import org.apache.doris.nereids.trees.expressions.ExprId;
-import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
-import org.apache.doris.nereids.trees.plans.physical.AbstractPhysicalSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalHashAggregate;
 import org.apache.doris.planner.PlanFragment;
 import org.apache.doris.planner.PlanFragmentId;
@@ -79,11 +77,6 @@ public class PlanTranslatorContext {
 
     private final IdentityHashMap<PlanFragment, PhysicalHashAggregate> firstAggInFragment
             = new IdentityHashMap<>();
-
-    // used in SortNode for analytic functions
-    private final IdentityHashMap<AbstractPhysicalSort, Boolean> isAnalyticSortNode = new IdentityHashMap<>();
-    // used in SortNode for analytic functions
-    private final IdentityHashMap<AbstractPhysicalSort, List<Expression>> partitionKeysInSort = new IdentityHashMap<>();
 
     public PlanTranslatorContext(CascadesContext ctx) {
         this.translator = new RuntimeFilterTranslator(ctx.getRuntimeFilterContext());
@@ -153,26 +146,6 @@ public class PlanTranslatorContext {
 
     public void setFirstAggregateInFragment(PlanFragment planFragment, PhysicalHashAggregate aggregate) {
         firstAggInFragment.put(planFragment, aggregate);
-    }
-
-    public boolean getIsAnalyticSortNode(AbstractPhysicalSort sort) {
-        return isAnalyticSortNode.get(sort);
-    }
-
-    public void setIsAnalyticSortNode(AbstractPhysicalSort sort, boolean isAnalyticSort) {
-        isAnalyticSortNode.put(sort, isAnalyticSort);
-    }
-
-    public boolean containsIsAnalyticSortNode(AbstractPhysicalSort sort) {
-        return isAnalyticSortNode.containsKey(sort);
-    }
-
-    public List<Expression> getPartitionKeysInSort(AbstractPhysicalSort sort) {
-        return partitionKeysInSort.get(sort);
-    }
-
-    public void setPartitionKeysInSort(AbstractPhysicalSort sort, List<Expression> partitionKeys) {
-        this.partitionKeysInSort.put(sort, partitionKeys);
     }
 
     /**

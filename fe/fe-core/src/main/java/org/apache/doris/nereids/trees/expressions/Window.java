@@ -152,7 +152,7 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
 
         windowFrame.ifPresent(wf -> sb.append(wf));
         String string = sb.toString();
-        string = string.endsWith(", ") ? string.substring(0, string.length() - 1) : string;
+        string = string.endsWith(", ") ? string.substring(0, string.length() - 2) : string;
         return string + ")";
     }
 
