@@ -38,8 +38,23 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * NormalizeWindow
- * todo: add examples
+ * NormalizeWindow: generate bottomProject for expressions within Window, and topProject for origin output of SQL
+ * e.g. for SQL: SELECT k1#1, k2#2, SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5) FROM t
+ *
+ * Original Plan:
+ * LogicalWindow(
+ *   outputs:[k1#1, k2#2, Alias(SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5)#6],
+ *   windowExpressions:[]
+ *   )
+ *
+ * After Normalize:
+ * Project(k1#1, k2#2, Alias(SlotReference#7)#7)
+ * +-- LogicalWindow(
+ *       outputs:[k1#1, k2#2, Alias(SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5)#6],
+ *       windowExpressions:[Alias(SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5)#6]
+ *       )
+ *   +-- Project(k1#1, k2#2, k3#3, k4#4, k5#5)
+ *
  */
 public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeToSlot {
 
@@ -49,17 +64,18 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
 
             List<NamedExpression> outputs = logicalWindow.getOutputExpressions();
 
-            // handle bottom projects
+            // 1. handle bottom projects
             Set<Alias> existedAlias = ExpressionUtils.collect(outputs, Alias.class::isInstance);
             Set<Expression> toBePushedDown = collectExpressionsToBePushedDown(logicalWindow);
             NormalizeToSlotContext context =
                     NormalizeToSlotContext.buildContext(existedAlias, toBePushedDown);
+            // set toBePushedDown exprs as NamedExpression, e.g. (a+1) -> Alias(a+1)
             Set<NamedExpression> bottomProjects = context.pushDownToNamedExpression(toBePushedDown);
             Plan normalizedChild = bottomProjects.isEmpty()
                     ? logicalWindow.child()
                     : new LogicalProject<>(ImmutableList.copyOf(bottomProjects), logicalWindow.child());
 
-            // handle window's outputs and windowExprs
+            // 2. handle window's outputs and windowExprs
             List<NamedExpression> normalizedOutputs = context.normalizeToUseSlotRef(outputs);
             Set<Window> normalizedWindows = ExpressionUtils.collect(normalizedOutputs, Window.class::isInstance);
 
@@ -77,7 +93,7 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
                     logicalWindow.withNormalized(normalizedWindowOutputs,
                             ImmutableList.copyOf(normalizedWindowsWithAlias), normalizedChild);
 
-            // generate top projects
+            // 3. generate top projects
             List<NamedExpression> topProjects = ctxForWindows.normalizeToUseSlotRef(normalizedOutputs);
             return new LogicalProject<>(topProjects, normalizedLogicalWindow);
         }).toRule(RuleType.NORMALIZE_WINDOW);
@@ -93,19 +109,18 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
 
         Set<Window> windows = ExpressionUtils.collect(logicalWindow.getWindowExpressions(), Window.class::isInstance);
         ImmutableSet<Expression> exprsInWindowSpec = windows.stream()
-                .flatMap(window -> window.getExpressions().stream())
+                .flatMap(window -> window.getExpressionsInWindowSpec().stream())
                 .collect(ImmutableSet.toImmutableSet());
 
-        ImmutableSet<Expression> argsOfFunctionInWindow = windows.stream()
-                .flatMap(window -> window.getWindowFunction().getArguments().stream())
-                .collect(ImmutableSet.toImmutableSet());
+        //        ImmutableSet<Expression> argsOfFunctionInWindow = windows.stream()
+        //                .flatMap(window -> window.getWindowFunction().getArguments().stream())
+        //                .collect(ImmutableSet.toImmutableSet());
 
         ImmutableSet<Expression> otherSlots = logicalWindow.getOutputExpressions().stream()
                 .filter(expr -> !expr.anyMatch(Window.class::isInstance))
                 .collect(ImmutableSet.toImmutableSet());
 
         return builder.addAll(exprsInWindowSpec)
-            .addAll(argsOfFunctionInWindow)
             .addAll(otherSlots)
             .build();
     }

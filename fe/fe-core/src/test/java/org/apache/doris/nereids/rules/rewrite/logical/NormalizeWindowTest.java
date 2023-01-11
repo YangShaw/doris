@@ -15,25 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.doris.nereids.trees.plans.algebra;
+package org.apache.doris.nereids.rules.rewrite.logical;
 
-import org.apache.doris.nereids.trees.expressions.Expression;
-import org.apache.doris.nereids.trees.expressions.NamedExpression;
+import org.apache.doris.nereids.util.PatternMatchSupported;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import org.junit.jupiter.api.TestInstance;
 
-/**
- * interface for LogicalWindow and PhysicalWindow
- */
-public interface Window {
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+public class NormalizeWindowTest implements PatternMatchSupported {
 
-    List<NamedExpression> getOutputExpressions();
-
-    default List<Expression> extractExpressionsFromWindow(List<NamedExpression> windowExpressions) {
-        return windowExpressions.stream().map(expression -> expression.child(0))
-            .map(org.apache.doris.nereids.trees.expressions.Window.class::cast)
-            .flatMap(window -> window.getExpressionsInWindowSpec().stream())
-            .collect(Collectors.toList());
-    }
 }

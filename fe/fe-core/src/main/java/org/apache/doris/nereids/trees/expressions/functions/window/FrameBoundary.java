@@ -92,16 +92,8 @@ public class FrameBoundary {
         return frameBoundType;
     }
 
-    public void setFrameBoundType(FrameBoundType frameBoundType) {
-        this.frameBoundType = frameBoundType;
-    }
-
     public Optional<Expression> getBoundOffset() {
         return boundOffset;
-    }
-
-    public void setBoundOffset(Optional<Expression> boundOffset) {
-        this.boundOffset = boundOffset;
     }
 
     @Override
@@ -124,5 +116,10 @@ public class FrameBoundary {
         FrameBoundary other = (FrameBoundary) o;
         return Objects.equals(this.frameBoundType, other.frameBoundType)
             && Objects.equals(this.boundOffset, other.boundOffset);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(boundOffset, frameBoundType);
     }
 }

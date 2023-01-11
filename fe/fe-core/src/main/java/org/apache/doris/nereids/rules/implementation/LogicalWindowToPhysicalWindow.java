@@ -34,9 +34,7 @@ import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.Plan;
-import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
-import org.apache.doris.nereids.trees.plans.physical.PhysicalQuickSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalWindow;
 
 import com.google.common.collect.Lists;
@@ -47,6 +45,16 @@ import java.util.stream.Collectors;
 
 /**
  * Implementation rule that convert logical window to physical window, and add RequiredProperties
+ *
+ * step 1: compute three kinds of group:
+ *      WindowFrameGroup: maintain windows with same PartitionKey, OrderKey and WindowFrame
+ *      OrderKeyGroup: maintain windows with same PartitionKey and OrderKey
+ *      PartitionKeyGroup: maintain windows with same PartitionKey
+ * step 2: sort PartitionKeyGroup with increasing order of tupleSize
+ * step 3: for every WindowFrameGroup of each SortGroup, generate one PhysicalWindow node, with common PartitionKeys,
+ *  OrderKeys, unique WindowFrame and a function list.
+ * step 4: for each PhysicalWindow, generate RequiredProperties, including PartitionKey for DistributionSpec,
+ *  and (PartitionKey + OrderKey) for OrderSpec.
  */
 @DependsRules({
     NormalizeWindow.class,
@@ -102,23 +110,18 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
      * ******************************************************************************************** */
 
     private Plan createLogicalPlanNodeForWindowFunctions(Plan root, OrderKeyGroup orderKeyGroup,
-                                                                LogicalWindow logicalWindow, CascadesContext ctx) {
+                                                         LogicalWindow logicalWindow, CascadesContext ctx) {
         // PhysicalSort node for orderKeys; if there exists no orderKey, newRoot = root
         // Plan newRoot = createPhysicalSortNode(root, orderKeyGroup, ctx);
         Plan newRoot = root;
-
-        boolean isAnalyticSort = true;
-        if (orderKeyGroup.partitionKeyList.isEmpty()) {
-            isAnalyticSort = false;
-        }
 
         // we will not add PhysicalSort in this step, but generate it if necessary with the ability of enforcer by
         // setting RequiredProperties
         List<OrderKey> requiredOrderKeys = generateKeysNeedToBeSorted(orderKeyGroup);
 
-        // PhysicalWindow node for window functions; at least one PhysicalWindow node will be added
+        // PhysicalWindow nodes for each different window frame, so at least one PhysicalWindow node will be added
         for (WindowFrameGroup windowFrameGroup : orderKeyGroup.groupList) {
-            newRoot = createPhysicalWindow(newRoot, windowFrameGroup, logicalWindow, isAnalyticSort, requiredOrderKeys);
+            newRoot = createPhysicalWindow(newRoot, windowFrameGroup, logicalWindow, requiredOrderKeys);
         }
 
         return newRoot;
@@ -143,44 +146,8 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         return keysNeedToBeSortedList;
     }
 
-    private Plan createPhysicalSortNode(Plan root, OrderKeyGroup orderKeyGroup, CascadesContext ctx) {
-        // all keys that need to be sorted, which includes BOTH partitionKeys and orderKeys from this group
-        List<OrderKey> keysNeedToBeSortedList = Lists.newArrayList();
-
-        // used as SortNode.isAnalyticSort, but it is unnecessary to add it in LogicalSort
-        boolean isAnalyticSort = false;
-        if (!orderKeyGroup.partitionKeyList.isEmpty()) {
-            keysNeedToBeSortedList.addAll(orderKeyGroup.partitionKeyList.stream().map(partitionKey -> {
-                // todo: haven't support isNullFirst, and its default value is false(see AnalyticPlanner#line403,
-                //  but in LogicalPlanBuilder, its default value is true)
-                return new OrderKey(partitionKey, true, false);
-            }).collect(Collectors.toList()));
-            isAnalyticSort = true;
-        }
-
-        if (!orderKeyGroup.orderKeyList.isEmpty()) {
-            keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeyList);
-        }
-
-        // add a PhysicalQuickSort node to resolve sorting requirement
-        if (!keysNeedToBeSortedList.isEmpty()) {
-            LogicalSort logicalSort = new LogicalSort(keysNeedToBeSortedList, root);
-            PhysicalQuickSort physicalQuickSort = (PhysicalQuickSort) new LogicalSortToPhysicalQuickSort()
-                    .build()
-                    .transform(logicalSort, ctx)
-                    .get(0);
-            return physicalQuickSort.withAnalyticSort(isAnalyticSort);
-
-            // todo: check if this group contains the sorting requirements caused by partitionKeys; if not,
-            //  this sorting is consistent with the sorting processing logic caused by the normal order by clause
-        }
-        // no Order-related keys, so no need for LogicalSort
-        return root;
-    }
-
     private PhysicalWindow createPhysicalWindow(Plan root, WindowFrameGroup windowFrameGroup,
-                                                LogicalWindow logicalWindow, boolean isAnalyticSort,
-                                                List<OrderKey> requiredOrderKeys) {
+                                                LogicalWindow logicalWindow, List<OrderKey> requiredOrderKeys) {
         // todo: partitionByEq and orderByEq?
         // requiredProperties:
         // Distribution: partitionKeys
@@ -199,7 +166,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         // PhysicalProperties properties = new PhysicalProperties(new OrderSpec(requiredOrderKeys));
         properties = properties.withOrderSpec(new OrderSpec(requiredOrderKeys));
         RequireProperties requireProperties = RequireProperties.of(properties);
-        return physicalWindow.withAnalyticSort(isAnalyticSort).withRequirePropertiesAndChild(requireProperties, root);
+        return physicalWindow.withRequirePropertiesAndChild(requireProperties, root);
     }
 
     /* ********************************************************************************************

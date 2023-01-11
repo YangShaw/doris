@@ -70,7 +70,6 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * step 2: check windowFunction in window
      */
     public Expression checkWindowFunction() {
-        // todo: change Window.windowFunction's class from UnboundFunction to WindowFunction
         // todo: visitNtile()
 
         // in checkWindowFrameBeforeFunc() we have confirmed that both left and right boundary are set as long as
@@ -98,7 +97,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
 
                 // reverse WindowFrame
                 // e.g. (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
-                window = window.withWindowFrame(reverseWindow(wf));
+                window = window.withWindowFrame(wf.reverseWindow());
 
                 // reverse WindowFunction, which is used only for first_value() and last_value()
                 Expression windowFunction = window.getWindowFunction();
@@ -112,12 +111,6 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
         }
 
-    }
-
-    private WindowFrame reverseWindow(WindowFrame wf) {
-        wf.setLeftBoundary(wf.getRightBoundary().reverse());
-        wf.setRightBoundary(wf.getLeftBoundary().reverse());
-        return wf;
     }
 
     /**
@@ -146,7 +139,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
 
         // set default rightBoundary
         if (windowFrame.getRightBoundary().isNull()) {
-            windowFrame.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
+            windowFrame = windowFrame.withRightBoundary(FrameBoundary.newCurrentRowBoundary());
         }
         FrameBoundary left = windowFrame.getLeftBoundary();
         FrameBoundary right = windowFrame.getRightBoundary();
@@ -326,26 +319,21 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
             WindowFrame wf = windowFrame.get();
             if (wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)
                     && wf.getLeftBoundary().isNot(FrameBoundType.PRECEDING)) {
-
-                wf.setRightBoundary(wf.getLeftBoundary());
+                window = window.withWindowFrame(wf.withRightBoundary(wf.getLeftBoundary()));
                 LastValue lastValue = new LastValue(firstValue.child());
                 return lastValue;
             }
 
             if (wf.getLeftBoundary().is(FrameBoundType.UNBOUNDED_PRECEDING)
                     && wf.getRightBoundary().isNot(FrameBoundType.PRECEDING)) {
-                wf.setRightBoundary(FrameBoundary.newCurrentRowBoundary());
+                window = window.withWindowFrame(wf.withRightBoundary(FrameBoundary.newCurrentRowBoundary()));
             }
-            window = window.withWindowFrame(wf);
-
         } else {
             window = window.withWindowFrame(new WindowFrame(FrameUnitsType.ROWS,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
         }
-
         return firstValue;
     }
-
 
     /**
      * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)

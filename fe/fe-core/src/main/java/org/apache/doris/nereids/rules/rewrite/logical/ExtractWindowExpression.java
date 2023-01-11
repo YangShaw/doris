@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * extract window expressions from LogicalWindow
+ * extract window expressions from LogicalWindow.outputExpressions
  */
 public class ExtractWindowExpression extends OneRewriteRuleFactory {
 

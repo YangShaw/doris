@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 /**
  * represents window function. WindowFunction of this window is saved as Window's child,
  * which is an UnboundFunction at first and will be analyzed as relevant BoundFunction
- * (may a WindowFunction or AggregateFunction) after BindFunction.
+ * (can be a WindowFunction or AggregateFunction) after BindFunction.
  */
 public class Window extends Expression implements UnaryExpression, PropagateNullable {
 
@@ -63,10 +63,12 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
     }
 
     /**
-     * extract expressions from partitionKeys and orderKeys
+     * extract expressions from function, partitionKeys and orderKeys
+     * todo: expressions from WindowFrame
      */
-    public List<Expression> getExpressions() {
+    public List<Expression> getExpressionsInWindowSpec() {
         List<Expression> expressions = Lists.newArrayList();
+        expressions.addAll(child().children());
         partitionKeyList.ifPresent(list -> expressions.addAll(list));
         orderKeyList.ifPresent(list -> expressions.addAll(list.stream()
                 .map(orderKey -> orderKey.getExpr())
@@ -93,6 +95,12 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
 
     public Window withOrderKeyList(List<OrderKey> orderKeyList) {
         return new Window(child(), partitionKeyList, Optional.of(orderKeyList), windowFrame);
+    }
+
+    @Override
+    public Window withChildren(List<Expression> children) {
+        Preconditions.checkArgument(children.size() == 1);
+        return new Window(children.get(0), partitionKeyList, orderKeyList, windowFrame);
     }
 
     @Override
@@ -130,7 +138,6 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
                 .collect(Collectors.joining(", ", "", " "))));
 
         windowFrame.ifPresent(wf -> sb.append(wf.toSql()));
-        // if windowFrame is not present, maybe an unused space ", " would be in the end of stringBuilder
         sb.append(")");
         return sb.toString().trim();
     }
@@ -152,6 +159,7 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
 
         windowFrame.ifPresent(wf -> sb.append(wf));
         String string = sb.toString();
+        // if windowFrame is not present, maybe an unused string ", " would be in the end of stringBuilder
         string = string.endsWith(", ") ? string.substring(0, string.length() - 2) : string;
         return string + ")";
     }
@@ -159,12 +167,6 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitWindow(this, context);
-    }
-
-    @Override
-    public Window withChildren(List<Expression> children) {
-        Preconditions.checkArgument(children.size() == 1);
-        return new Window(children.get(0), partitionKeyList, orderKeyList, windowFrame);
     }
 
     @Override

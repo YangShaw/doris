@@ -487,19 +487,22 @@ public class BindSlotReference implements AnalysisRuleFactory {
             RuleType.BINDING_WINDOW_SLOT.build(
                 logicalWindow().when(Plan::canBind).thenApply(ctx -> {
                     LogicalWindow<GroupPlan> window = ctx.root;
-                    return bindWindowExpressions(window, ctx.cascadesContext);
+                    return bindExpressionsInLogicalWindow(window, ctx.cascadesContext);
                 })
             )
         );
     }
 
-    private Plan bindWindowExpressions(LogicalWindow<? extends Plan> logicalWindow, CascadesContext cascadesContext) {
+    private Plan bindExpressionsInLogicalWindow(LogicalWindow<? extends Plan> logicalWindow,
+                                                CascadesContext cascadesContext) {
         List<Plan> inputs = logicalWindow.children();
         List<NamedExpression> outputExpressions = logicalWindow.getOutputExpressions().stream().map(expression -> {
             if (expression.anyMatch(Window.class::isInstance)) {
                 Window window = (Window) (expression.child(0));
                 Optional<List<Expression>> newPKList;
                 // bind expressions in partitionKeys and orderKey
+                // todo: expressions in WindowFrame should be bound after being supported, like
+                //  ROWS BETWEEN 3+2 preceding AND current row
                 if (window.getPartitionKeyList().isPresent()) {
                     newPKList = Optional.of(window.getPartitionKeyList().get().stream()
                          .map(expr -> bind(expr, inputs, logicalWindow, cascadesContext))

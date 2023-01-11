@@ -50,8 +50,6 @@ public class LogicalProject<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_
 
     private final boolean isDistinct;
 
-    private boolean extractedWindow = false;
-
     public LogicalProject(List<NamedExpression> projects, CHILD_TYPE child) {
         this(projects, ImmutableList.of(), true, child, false);
     }

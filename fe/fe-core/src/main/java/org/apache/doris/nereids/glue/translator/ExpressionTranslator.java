@@ -71,8 +71,8 @@ import org.apache.doris.nereids.trees.expressions.TimestampArithmetic;
 import org.apache.doris.nereids.trees.expressions.UnaryArithmetic;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
-import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.WindowFrameGroupExpression;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateParam;
@@ -95,7 +95,6 @@ import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionVisit
 import org.apache.doris.nereids.types.coercion.AbstractDataType;
 import org.apache.doris.thrift.TFunctionBinaryType;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
@@ -312,42 +311,33 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     }
 
     @Override
-    public Expr visitWindow(Window window, PlanTranslatorContext context) {
-        // variable in Nereids
-        Optional<WindowFrame> windowFrame = window.getWindowFrame();
-        Optional<List<Expression>> partitionKeyList = window.getPartitionKeyList();
-        Optional<List<OrderKey>> orderKeyList = window.getOrderKeyList();
-        Expression windowFunction = window.getWindowFunction();
+    public Expr visitWindowFrameGroupExpression(WindowFrameGroupExpression wfge, PlanTranslatorContext context) {
+        List<Expression> partitionKeyList = wfge.getPartitionKeyList();
+        List<OrderKey> orderKeyList = wfge.getOrderKeyList();
+        WindowFrame windowFrame = wfge.getWindowFrame();
+        Expression function = wfge.getWindowFunctionList().get(0).child(0).child(0);
 
-        // variable in old optimizer
         // partition by clause
         List<Expr> partitionExprs = Lists.newArrayList();
-        if (partitionKeyList.isPresent()) {
-            partitionExprs = partitionKeyList.get().stream()
+        partitionExprs = partitionKeyList.stream()
                 .map(e -> e.accept(this, context))
                 .collect(Collectors.toList());
-        }
 
         // order by clause
         List<OrderByElement> orderByElements = Lists.newArrayList();
-        if (orderKeyList.isPresent()) {
-            orderByElements = orderKeyList.get().stream()
+        orderByElements = orderKeyList.stream()
                 .map(orderKey -> withOrderKeyInWindow(orderKey, context))
                 .collect(Collectors.toList());
-        }
 
         // window frame clause
-        Preconditions.checkArgument(windowFrame.isPresent());
-        AnalyticWindow analyticWindow = withWindowFrame(windowFrame.get(), context);
+        AnalyticWindow analyticWindow = withWindowFrame(windowFrame, context);
 
-        // window function
-        FunctionCallExpr fnCall = (FunctionCallExpr) windowFunction.accept(this, context);
+        FunctionCallExpr func = (FunctionCallExpr) function.accept(this, context);
 
         // return AnalyticExpr
-        return new AnalyticExpr(fnCall, partitionExprs, orderByElements, analyticWindow);
+        return new AnalyticExpr(func, partitionExprs, orderByElements, analyticWindow);
     }
 
-    // not sure whether it is correct to use visitOrderKey to resolve this case
     public OrderByElement withOrderKeyInWindow(OrderKey orderKey, PlanTranslatorContext context) {
         return new OrderByElement(
             orderKey.getExpr().accept(this, context),
@@ -400,26 +390,28 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
 
     @Override
     public Expr visitWindowFunction(WindowFunction function, PlanTranslatorContext context) {
+        // translate argument types from DataType to Type
         List<Expr> catalogArguments = function.getArguments()
                 .stream()
                 .map(arg -> arg.accept(this, context))
                 .collect(ImmutableList.toImmutableList());
-
-        List<Expr> arguments = function.getArguments()
-                .stream()
-                .map(arg -> new SlotRef(arg.getDataType().toCatalogDataType(), arg.nullable()))
-                .collect(ImmutableList.toImmutableList());
-
-        FunctionParams windowFnParams = new FunctionParams(false, arguments);
-
         ImmutableList<Type> argTypes = catalogArguments.stream()
                 .map(arg -> arg.getType())
                 .collect(ImmutableList.toImmutableList());
 
+        // translate argument from List<Expression> to FunctionParams
+        List<Expr> arguments = function.getArguments()
+                .stream()
+                .map(arg -> new SlotRef(arg.getDataType().toCatalogDataType(), arg.nullable()))
+                .collect(ImmutableList.toImmutableList());
+        FunctionParams windowFnParams = new FunctionParams(false, arguments);
+
+        // translate isNullable()
         NullableMode nullableMode = function.nullable()
                 ? NullableMode.ALWAYS_NULLABLE
                 : NullableMode.ALWAYS_NOT_NULLABLE;
 
+        // translate function from WindowFunction to old AggregateFunction
         boolean isAnalyticFunction = true;
         org.apache.doris.catalog.AggregateFunction catalogFunction = new org.apache.doris.catalog.AggregateFunction(
                 new FunctionName(function.getName()), argTypes,
@@ -432,11 +424,11 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
                 true, true, nullableMode
         );
 
+        // generate FunctionCallExpr
         boolean isMergeFn = false;
         FunctionCallExpr functionCallExpr =
                 new FunctionCallExpr(catalogFunction, windowFnParams, windowFnParams, isMergeFn, catalogArguments);
         functionCallExpr.setIsAnalyticFnCall(true);
-        // create catalog FunctionCallExpr without analyze again
         return functionCallExpr;
 
     }
@@ -544,6 +536,48 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     @Override
     public Expr visitIsNull(IsNull isNull, PlanTranslatorContext context) {
         return new IsNullPredicate(isNull.child().accept(this, context), false);
+    }
+
+    @Override
+    public Expr visitAggregateFunction(AggregateFunction function, PlanTranslatorContext context) {
+        List<Expr> catalogArguments = function.getArguments()
+                .stream()
+                .map(arg -> arg.accept(this, context))
+                .collect(ImmutableList.toImmutableList());
+        ImmutableList<Type> argTypes = catalogArguments.stream()
+                .map(arg -> arg.getType())
+                .collect(ImmutableList.toImmutableList());
+
+        List<Expr> arguments = function.getArguments()
+                .stream()
+                .map(arg -> new SlotRef(arg.getDataType().toCatalogDataType(), arg.nullable()))
+                .collect(ImmutableList.toImmutableList());
+        FunctionParams aggFnParams = new FunctionParams(false, arguments);
+
+        // translate isNullable()
+        NullableMode nullableMode = function.nullable()
+                ? NullableMode.ALWAYS_NULLABLE
+                : NullableMode.ALWAYS_NOT_NULLABLE;
+
+        // translate function from WindowFunction to old AggregateFunction
+        boolean isAnalyticFunction = true;
+        org.apache.doris.catalog.AggregateFunction catalogFunction = new org.apache.doris.catalog.AggregateFunction(
+                new FunctionName(function.getName()), argTypes,
+                function.getDataType().toCatalogDataType(),
+                function.getDataType().toCatalogDataType(),
+                function.hasVarArguments(),
+                null, "", "", null, "",
+                null, "", null, false,
+                isAnalyticFunction, false, TFunctionBinaryType.BUILTIN,
+                true, true, nullableMode
+        );
+
+        // generate FunctionCallExpr
+        boolean isMergeFn = false;
+        FunctionCallExpr functionCallExpr =
+                new FunctionCallExpr(catalogFunction, aggFnParams, aggFnParams, isMergeFn, catalogArguments);
+        functionCallExpr.setIsAnalyticFnCall(true);
+        return functionCallExpr;
     }
 
     // TODO: Supports for `distinct`

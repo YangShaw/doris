@@ -22,10 +22,10 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
-import org.apache.doris.nereids.types.DataType;
-import org.apache.doris.nereids.types.IntegerType;
+import org.apache.doris.nereids.types.BigIntType;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 
@@ -40,12 +40,12 @@ public class RowNumber extends WindowFunction implements AlwaysNotNullable, Leaf
 
     @Override
     public List<FunctionSignature> getSignatures() {
-        return null;
+        return ImmutableList.of(FunctionSignature.ret(BigIntType.INSTANCE).args());
     }
 
     @Override
     public FunctionSignature searchSignature(List<FunctionSignature> signatures) {
-        return null;
+        return signatures.get(0);
     }
 
     @Override
@@ -57,11 +57,6 @@ public class RowNumber extends WindowFunction implements AlwaysNotNullable, Leaf
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitRowNumber(this, context);
-    }
-
-    @Override
-    public DataType getDataType() {
-        return IntegerType.INSTANCE;
     }
 
 }

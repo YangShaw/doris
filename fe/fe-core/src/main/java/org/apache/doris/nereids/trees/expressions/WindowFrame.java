@@ -55,16 +55,23 @@ public class WindowFrame extends Expression implements PropagateNullable, LeafEx
         return leftBoundary;
     }
 
-    public void setLeftBoundary(FrameBoundary leftBoundary) {
-        this.leftBoundary = leftBoundary;
-    }
-
     public FrameBoundary getRightBoundary() {
         return rightBoundary;
     }
 
     public void setRightBoundary(FrameBoundary rightBoundary) {
         this.rightBoundary = rightBoundary;
+    }
+
+    /**
+     * reverse left & right boundary; reverse each boundary's upper and lower bound
+     */
+    public WindowFrame reverseWindow() {
+        return new WindowFrame(frameUnits, rightBoundary.reverse(), leftBoundary.reverse());
+    }
+
+    public WindowFrame withRightBoundary(FrameBoundary newRightBoundary) {
+        return new WindowFrame(frameUnits, leftBoundary, newRightBoundary);
     }
 
     @Override
@@ -115,5 +122,4 @@ public class WindowFrame extends Expression implements PropagateNullable, LeafEx
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitWindowFrame(this, context);
     }
-
 }

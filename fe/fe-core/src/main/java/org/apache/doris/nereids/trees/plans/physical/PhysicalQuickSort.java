@@ -31,7 +31,6 @@ import org.apache.doris.statistics.StatsDeriveResult;
 import com.google.common.base.Preconditions;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -44,37 +43,22 @@ public class PhysicalQuickSort<CHILD_TYPE extends Plan> extends AbstractPhysical
         this(orderKeys, Optional.empty(), logicalProperties, child);
     }
 
-    public PhysicalQuickSort(List<OrderKey> orderKeys, boolean isAnalyticSort,
-            LogicalProperties logicalProperties, CHILD_TYPE child) {
-        this(orderKeys, isAnalyticSort, Optional.empty(), logicalProperties, child);
+    /**
+     * Constructor of PhysicalQuickSort.
+     */
+    public PhysicalQuickSort(List<OrderKey> orderKeys, Optional<GroupExpression> groupExpression,
+                             LogicalProperties logicalProperties, CHILD_TYPE child) {
+        super(PlanType.PHYSICAL_QUICK_SORT, orderKeys, groupExpression, logicalProperties, child);
     }
 
     /**
      * Constructor of PhysicalQuickSort.
      */
-    public PhysicalQuickSort(List<OrderKey> orderKeys,
-            Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
-            CHILD_TYPE child) {
-        super(PlanType.PHYSICAL_QUICK_SORT, orderKeys, groupExpression, logicalProperties, child);
-        this.isAnalyticSort = false;
-    }
-
-    public PhysicalQuickSort(List<OrderKey> orderKeys, boolean isAnalyticSort,
-                             Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
-                             CHILD_TYPE child) {
-        super(PlanType.PHYSICAL_QUICK_SORT, orderKeys, groupExpression, logicalProperties, child);
-        this.isAnalyticSort = isAnalyticSort;
-    }
-
-    /**
-     * Constructor of PhysicalQuickSort.
-     */
-    public PhysicalQuickSort(List<OrderKey> orderKeys, boolean isAnalyticSort,
-            Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
-            PhysicalProperties physicalProperties, StatsDeriveResult statsDeriveResult, CHILD_TYPE child) {
+    public PhysicalQuickSort(List<OrderKey> orderKeys, Optional<GroupExpression> groupExpression,
+                             LogicalProperties logicalProperties, PhysicalProperties physicalProperties,
+                             StatsDeriveResult statsDeriveResult, CHILD_TYPE child) {
         super(PlanType.PHYSICAL_QUICK_SORT, orderKeys, groupExpression, logicalProperties, physicalProperties,
                 statsDeriveResult, child);
-        this.isAnalyticSort = isAnalyticSort;
     }
 
     @Override
@@ -82,56 +66,33 @@ public class PhysicalQuickSort<CHILD_TYPE extends Plan> extends AbstractPhysical
         return visitor.visitPhysicalQuickSort(this, context);
     }
 
-    public PhysicalQuickSort<Plan> withAnalyticSort(boolean isAnalyticSort) {
-        return new PhysicalQuickSort<>(orderKeys, isAnalyticSort, groupExpression, getLogicalProperties(), child());
-    }
-
     @Override
     public PhysicalQuickSort<Plan> withChildren(List<Plan> children) {
         Preconditions.checkArgument(children.size() == 1);
-        return new PhysicalQuickSort<>(orderKeys, isAnalyticSort, getLogicalProperties(), children.get(0));
+        return new PhysicalQuickSort<>(orderKeys, getLogicalProperties(), children.get(0));
     }
 
     @Override
     public PhysicalQuickSort<CHILD_TYPE> withGroupExpression(Optional<GroupExpression> groupExpression) {
-        return new PhysicalQuickSort<>(orderKeys, isAnalyticSort, groupExpression, getLogicalProperties(), child());
+        return new PhysicalQuickSort<>(orderKeys, groupExpression, getLogicalProperties(), child());
     }
 
     @Override
     public PhysicalQuickSort<CHILD_TYPE> withLogicalProperties(Optional<LogicalProperties> logicalProperties) {
-        return new PhysicalQuickSort<>(orderKeys, isAnalyticSort, Optional.empty(), logicalProperties.get(), child());
+        return new PhysicalQuickSort<>(orderKeys, Optional.empty(), logicalProperties.get(), child());
     }
 
     @Override
     public PhysicalQuickSort<CHILD_TYPE> withPhysicalPropertiesAndStats(PhysicalProperties physicalProperties,
             StatsDeriveResult statsDeriveResult) {
-        return new PhysicalQuickSort<>(orderKeys, isAnalyticSort, Optional.empty(), getLogicalProperties(),
+        return new PhysicalQuickSort<>(orderKeys, Optional.empty(), getLogicalProperties(),
                 physicalProperties, statsDeriveResult, child());
     }
 
     @Override
     public String toString() {
         return Utils.toSqlString("PhysicalQuickSort",
-            "orderKeys", orderKeys,
-            "isAnalyticSort", isAnalyticSort
+            "orderKeys", orderKeys
         );
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        PhysicalQuickSort that = (PhysicalQuickSort) o;
-        return Objects.equals(orderKeys, that.orderKeys)
-            && isAnalyticSort == that.isAnalyticSort;
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(orderKeys, isAnalyticSort);
     }
 }

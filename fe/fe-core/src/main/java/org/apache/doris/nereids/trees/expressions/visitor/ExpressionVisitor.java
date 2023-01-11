@@ -75,6 +75,7 @@ import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
+import org.apache.doris.nereids.trees.expressions.WindowFrameGroupExpression;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.functions.generator.TableGeneratingFunction;
@@ -418,6 +419,17 @@ public abstract class ExpressionVisitor<R, C>
 
     public R visitOrderExpression(OrderExpression orderExpression, C context) {
         return visit(orderExpression, context);
+
+    public R visitWindow(Window window, C context) {
+        return visit(window, context);
+    }
+
+    public R visitWindowFrame(WindowFrame windowFrame, C context) {
+        return visit(windowFrame, context);
+    }
+
+    public R visitWindowFrameGroupExpression(WindowFrameGroupExpression windowFrameGroupExpression, C context) {
+        return visit(windowFrameGroupExpression, context);
     }
 
     /* ********************************************************************************************
@@ -438,13 +450,5 @@ public abstract class ExpressionVisitor<R, C>
 
     public R visitUnboundStar(UnboundStar unboundStar, C context) {
         return visitNamedExpression(unboundStar, context);
-    }
-
-    public R visitWindow(Window window, C context) {
-        return visit(window, context);
-    }
-
-    public R visitWindowFrame(WindowFrame windowFrame, C context) {
-        return visit(windowFrame, context);
     }
 }

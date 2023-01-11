@@ -159,8 +159,6 @@ public class NereidsPlanner extends Planner {
                     return analyzedPlan;
                 }
             }
-            System.out.println("analyzed------------------------");
-            System.out.println(cascadesContext.getMemo().copyOut().treeString());
 
             // rule-based optimize
             rewrite();
@@ -170,8 +168,6 @@ public class NereidsPlanner extends Planner {
                     return rewrittenPlan;
                 }
             }
-            System.out.println("rewrited------------------------");
-            System.out.println(cascadesContext.getMemo().copyOut().treeString());
 
             deriveStats();
 
@@ -183,7 +179,7 @@ public class NereidsPlanner extends Planner {
             // cost-based optimize and explore plan space
             optimize();
 
-            PhysicalPlan physicalPlan = chooseBestPlan(getRoot(), PhysicalProperties.ANY);
+            PhysicalPlan physicalPlan = chooseBestPlan(getRoot(), requireProperties);
 
             physicalPlan = postProcess(physicalPlan);
             if (explainLevel == ExplainLevel.OPTIMIZED_PLAN || explainLevel == ExplainLevel.ALL_PLAN) {
@@ -288,7 +284,6 @@ public class NereidsPlanner extends Planner {
             return physicalPlan;
         } catch (Exception e) {
             String memo = cascadesContext.getMemo().toString();
-            System.out.println("Failed to choose best plan, memo structure:{}" + memo);
             LOG.warn("Failed to choose best plan, memo structure:{}", memo, e);
             throw new AnalysisException("Failed to choose best plan", e);
         }

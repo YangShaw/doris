@@ -31,21 +31,13 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 目标：创建逻辑节点，来维护窗口函数相关的信息。窗口函数对排序有要求，因此也需要增加Sort相关的算子；
- * 为了避免重复排序（分区字段也相当于排序），需要对不同窗口函数的信息进行分析，合并同类项。
+ * Check and standardize Window expression:
  *
- * 标准化部分
- * 1 对每一个Window做检查：根据函数类型检查order、frame；检查函数类型是否支持；
- * 2 补充窗口，进行标准化，不同的窗口函数有不同的标准化规则（不确定要在几步中进行）
+ * step 1: checkWindowFrameBeforeFunc():
  *
- * 合并同类项部分
- * *1 计算三种Group:
- *      WindowFrameGroup:分区、排序、窗口都相同
- *      OrderKeyGroup: 分区、排序相同
- *      PartitionKeyGroup: 分区相同
- * *2 在PartitionGroup中查找SortGroup
- * *3 对于每个SortGroup，生成LogicalSort算子；
- * *4 对于SortGroup中的每个WindowGroup，生成LogicalWindow算子；
+ * step 2: checkWindowFunction():
+ *
+ * step 3: checkWindowAfterFunc():
  */
 public class CheckAndStandardizeWindowFunctionAndFrame extends OneRewriteRuleFactory {
 
@@ -61,9 +53,7 @@ public class CheckAndStandardizeWindowFunctionAndFrame extends OneRewriteRuleFac
      *  main procedure
      */
     private LogicalWindow checkAndStandardize(LogicalWindow<GroupPlan> logicalWindow) {
-
         List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
-
         windowList = windowList.stream().map(windowAlias -> {
             Window window = (Window) windowAlias.child(0);
             WindowFunctionChecker checker = new WindowFunctionChecker(window);

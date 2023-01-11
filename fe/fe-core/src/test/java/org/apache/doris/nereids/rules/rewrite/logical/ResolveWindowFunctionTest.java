@@ -153,16 +153,18 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
     public void testWindowGroup() {
         connectContext.getSessionVariable().setEnableNereidsPlanner(true);
         connectContext.getSessionVariable().setEnableNereidsTrace(true);
-        String sql = "SELECT s_city, rank() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
+        // String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
 
-        // String sql = "select s_nation, sum(s_suppkey), count(s_suppkey) from supplier group by s_nation";
-        // String sql = "select s_city, sum(s_suppkey) from supplier group by s_city";
+        // String sql2 = "select s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) from supplier";
+        String sql = "select s_city, sum(s_suppkey) over(partition by s_nation order by s_address) from supplier";
+        System.out.println("hello world");
+        System.out.println("hello world 2");
         PlanChecker.from(connectContext).checkPlannerResult(sql);
     }
 
     @Test
     public void testToString() {
-        String sql = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name ROWS BETWEEN 1 preceding AND current row) FROM supplier";
+        String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
         PlanChecker.from(connectContext).checkPlannerResult(sql);
     }
 

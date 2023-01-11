@@ -955,16 +955,23 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                     if (!unboundStars.get(0).getQualifier().isEmpty()) {
                         throw new ParseException("'*' can not has qualifier: " + unboundStars.size(), ctx);
                     }
+                    if (ctx.windowSpec() != null) {
+                        throw new ParseException(
+                                "COUNT(*) isn't supported as window function; can use COUNT(col)", ctx);
+                    }
                     return new Count();
                 }
                 throw new ParseException("'*' can only be used in conjunction with COUNT: " + functionName, ctx);
+            } else {
+                UnboundFunction function = new UnboundFunction(functionName, isDistinct, params);
+                if (ctx.windowSpec() != null) {
+                    if (isDistinct) {
+                        throw new ParseException("DISTINCT not allowed in window function: " + functionName, ctx);
+                    }
+                    return withWindowSpec(ctx.windowSpec(), function);
+                }
+                return function;
             }
-            UnboundFunction function = new UnboundFunction(functionName, isDistinct, params);
-
-            if (ctx.windowSpec() != null) {
-                return withWindowSpec(ctx.windowSpec(), function);
-            }
-            return function;
         });
     }
 
@@ -972,13 +979,11 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
      * deal with window function definition
      */
     public Window withWindowSpec(WindowSpecContext ctx, Expression function) {
-        Optional<List<Expression>> partitionKeys = Optional.ofNullable(ctx.partitionClause())
-                .map(a -> Optional.of(visit(a.expression(), Expression.class)))
-                .orElse(Optional.empty());
+        Optional<List<Expression>> partitionKeys = optionalVisit(ctx.partitionClause(),
+                () -> visit(ctx.partitionClause().expression(), Expression.class));
 
-        Optional<List<OrderKey>> orderKeys = Optional.ofNullable(ctx.sortClause())
-                .map(a -> Optional.of(visit(a.sortItem(), OrderKey.class)))
-                .orElse(Optional.empty());
+        Optional<List<OrderKey>> orderKeys = optionalVisit(ctx.sortClause(),
+                () -> visit(ctx.sortClause().sortItem(), OrderKey.class));
 
         Optional<WindowFrame> windowFrame = optionalVisit(ctx.windowFrame(),
                 () -> withWindowFrame(ctx.windowFrame()));
@@ -1533,13 +1538,6 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                 }
             }
         });
-    }
-
-    private List<NamedExpression> extractWindowExpressions(List<NamedExpression> expressions) {
-        return expressions.stream()
-            .filter(expression ->
-                expression instanceof UnboundAlias && expression.child(0) instanceof Window)
-            .collect(ImmutableList.toImmutableList());
     }
 
     private boolean containsWindowExpressions(List<NamedExpression> expressions) {

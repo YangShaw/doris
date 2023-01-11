@@ -22,10 +22,12 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
+import org.apache.doris.nereids.types.BigIntType;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 
@@ -40,12 +42,12 @@ public class DenseRank extends WindowFunction implements AlwaysNotNullable, Leaf
 
     @Override
     public List<FunctionSignature> getSignatures() {
-        return null;
+        return ImmutableList.of(FunctionSignature.ret(BigIntType.INSTANCE).args());
     }
 
     @Override
     public FunctionSignature searchSignature(List<FunctionSignature> signatures) {
-        return null;
+        return signatures.get(0);
     }
 
     @Override
