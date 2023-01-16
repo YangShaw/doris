@@ -327,11 +327,11 @@ primaryExpression
       source=valueExpression RIGHT_PAREN                                                       #extract
     ;
 
-<<<<<<< HEAD
 functionIdentifier
     : identifier
     | LEFT | RIGHT
-=======
+    ;
+
 windowSpec
     : name=identifier
     | LEFT_PAREN name=identifier RIGHT_PAREN
@@ -356,7 +356,6 @@ frameBound
     : UNBOUNDED boundType=(PRECEDING | FOLLOWING)
     | boundType=CURRENT ROW
     | expression boundType=(PRECEDING | FOLLOWING)
->>>>>>> 6ccfcbf62 (window function parse & datastructures)
     ;
 
 qualifiedName

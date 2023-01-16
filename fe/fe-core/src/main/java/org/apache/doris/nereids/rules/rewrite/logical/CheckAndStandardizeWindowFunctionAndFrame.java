@@ -34,10 +34,14 @@ import java.util.stream.Collectors;
  * Check and standardize Window expression:
  *
  * step 1: checkWindowFrameBeforeFunc():
- *
+ *  general checking for WindowFrame, including check OrderKeyList, set default right boundary, check offset if exists,
+ *  check correctness of boundaryType
  * step 2: checkWindowFunction():
- *
+ *  check window function, and different function has different checking rules .
+ *  If window frame not exits, set a unique default window frame according to their function type.
  * step 3: checkWindowAfterFunc():
+ *  reverse window if necessary (just for first_value() and last_value()), and add a general default
+ *  window frame (RANGE between UNBOUNDED PRECEDING and CURRENT ROW)
  */
 public class CheckAndStandardizeWindowFunctionAndFrame extends OneRewriteRuleFactory {
 

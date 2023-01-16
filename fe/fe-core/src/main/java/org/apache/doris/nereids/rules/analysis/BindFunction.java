@@ -160,7 +160,8 @@ public class BindFunction implements AnalysisRuleFactory {
             RuleType.BINDING_WINDOW_FUNCTION.build(
                 logicalWindow().thenApply(ctx -> {
                     LogicalWindow<GroupPlan> window = ctx.root;
-                    List<NamedExpression> outputs = bind(window.getOutputExpressions(), ctx.connectContext.getEnv());
+                    List<NamedExpression> outputs = bindAndTypeCoercion(window.getOutputExpressions(),
+                            ctx.connectContext);
                     return new LogicalWindow(outputs, window.child());
                 })
             )

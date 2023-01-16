@@ -505,7 +505,7 @@ public class BindSlotReference implements AnalysisRuleFactory {
                 //  ROWS BETWEEN 3+2 preceding AND current row
                 if (window.getPartitionKeyList().isPresent()) {
                     newPKList = Optional.of(window.getPartitionKeyList().get().stream()
-                         .map(expr -> bind(expr, inputs, logicalWindow, cascadesContext))
+                         .map(expr -> bind(expr, inputs, cascadesContext))
                          .collect(Collectors.toList()));
                 } else {
                     newPKList = Optional.empty();
@@ -515,7 +515,7 @@ public class BindSlotReference implements AnalysisRuleFactory {
                 if (window.getOrderKeyList().isPresent()) {
                     newOKList = Optional.of(window.getOrderKeyList().get().stream()
                         .map(orderKey -> {
-                            Expression item = bind(orderKey.getExpr(), inputs, logicalWindow, cascadesContext);
+                            Expression item = bind(orderKey.getExpr(), inputs, cascadesContext);
                             return new OrderKey(item, orderKey.isAsc(), orderKey.isNullFirst());
                         })
                         .collect(Collectors.toList()));
@@ -524,9 +524,9 @@ public class BindSlotReference implements AnalysisRuleFactory {
                 }
                 return bind((NamedExpression) expression.withChildren(
                     new Window(window.child(), newPKList, newOKList, window.getWindowFrame())),
-                    inputs, logicalWindow, cascadesContext);
+                    inputs, cascadesContext);
             }
-            return bind(expression, inputs, logicalWindow, cascadesContext);
+            return bind(expression, inputs, cascadesContext);
         }).collect(Collectors.toList());
         return new LogicalWindow<>(outputExpressions, logicalWindow.child(0));
     }

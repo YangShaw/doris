@@ -17,8 +17,6 @@
 
 package org.apache.doris.nereids.glue.translator;
 
-import org.apache.doris.analysis.AnalyticExpr;
-import org.apache.doris.analysis.AnalyticWindow;
 import org.apache.doris.analysis.ArithmeticExpr;
 import org.apache.doris.analysis.AssertNumRowsElement.Assertion;
 import org.apache.doris.analysis.BinaryPredicate;
@@ -41,7 +39,6 @@ import org.apache.doris.analysis.TimestampArithmeticExpr;
 import org.apache.doris.catalog.Function.NullableMode;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.nereids.exceptions.AnalysisException;
-import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.AggregateExpression;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.And;
@@ -71,8 +68,6 @@ import org.apache.doris.nereids.trees.expressions.TimestampArithmetic;
 import org.apache.doris.nereids.trees.expressions.UnaryArithmetic;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
-import org.apache.doris.nereids.trees.expressions.WindowFrame;
-import org.apache.doris.nereids.trees.expressions.WindowFrameGroupExpression;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateParam;
@@ -81,9 +76,6 @@ import org.apache.doris.nereids.trees.expressions.functions.generator.TableGener
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonArray;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonObject;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ScalarFunction;
-import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundType;
-import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
-import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.expressions.functions.window.WindowFunction;
 import org.apache.doris.nereids.trees.expressions.literal.DateLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.DateTimeLiteral;
@@ -98,7 +90,6 @@ import org.apache.doris.thrift.TFunctionBinaryType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -311,84 +302,6 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     }
 
     @Override
-    public Expr visitWindowFrameGroupExpression(WindowFrameGroupExpression wfge, PlanTranslatorContext context) {
-        List<Expression> partitionKeyList = wfge.getPartitionKeyList();
-        List<OrderKey> orderKeyList = wfge.getOrderKeyList();
-        WindowFrame windowFrame = wfge.getWindowFrame();
-        Expression function = wfge.getWindowFunctionList().get(0).child(0).child(0);
-
-        // partition by clause
-        List<Expr> partitionExprs = Lists.newArrayList();
-        partitionExprs = partitionKeyList.stream()
-                .map(e -> e.accept(this, context))
-                .collect(Collectors.toList());
-
-        // order by clause
-        List<OrderByElement> orderByElements = Lists.newArrayList();
-        orderByElements = orderKeyList.stream()
-                .map(orderKey -> withOrderKeyInWindow(orderKey, context))
-                .collect(Collectors.toList());
-
-        // window frame clause
-        AnalyticWindow analyticWindow = withWindowFrame(windowFrame, context);
-
-        FunctionCallExpr func = (FunctionCallExpr) function.accept(this, context);
-
-        // return AnalyticExpr
-        return new AnalyticExpr(func, partitionExprs, orderByElements, analyticWindow);
-    }
-
-    public OrderByElement withOrderKeyInWindow(OrderKey orderKey, PlanTranslatorContext context) {
-        return new OrderByElement(
-            orderKey.getExpr().accept(this, context),
-            orderKey.isAsc(), orderKey.isNullFirst());
-    }
-
-    /**
-     * translate WindowFrame to AnalyticWindow
-     */
-    public AnalyticWindow withWindowFrame(WindowFrame windowFrame, PlanTranslatorContext context) {
-
-        FrameUnitsType frameUnits = windowFrame.getFrameUnits();
-        FrameBoundary leftBoundary = windowFrame.getLeftBoundary();
-        FrameBoundary rightBoundary = windowFrame.getRightBoundary();
-
-        AnalyticWindow.Type type = frameUnits == FrameUnitsType.ROWS
-                ? AnalyticWindow.Type.ROWS : AnalyticWindow.Type.RANGE;
-
-        AnalyticWindow.Boundary left = withFrameBoundary(leftBoundary, context);
-        AnalyticWindow.Boundary right = withFrameBoundary(rightBoundary, context);
-
-        return new AnalyticWindow(type, left, right);
-    }
-
-    private AnalyticWindow.Boundary withFrameBoundary(FrameBoundary boundary, PlanTranslatorContext context) {
-        FrameBoundType boundType = boundary.getFrameBoundType();
-        BigDecimal offsetValue = null;
-        Expr e = null;
-        if (boundary.hasOffset()) {
-            Expression boundOffset = boundary.getBoundOffset().get();
-            boundOffset.accept(this, context);
-            offsetValue = new BigDecimal(((Literal) boundOffset).getDouble());
-        }
-
-        switch (boundType) {
-            case UNBOUNDED_PRECEDING:
-                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.UNBOUNDED_PRECEDING, null);
-            case UNBOUNDED_FOLLOWING:
-                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.UNBOUNDED_FOLLOWING, null);
-            case CURRENT_ROW:
-                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.CURRENT_ROW, null);
-            case PRECEDING:
-                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.PRECEDING, e, offsetValue);
-            case FOLLOWING:
-                return new AnalyticWindow.Boundary(AnalyticWindow.BoundaryType.FOLLOWING, e, offsetValue);
-            default:
-                throw new AnalysisException("This WindowFrame hasn't be resolved in REWRITE");
-        }
-    }
-
-    @Override
     public Expr visitWindowFunction(WindowFunction function, PlanTranslatorContext context) {
         // translate argument types from DataType to Type
         List<Expr> catalogArguments = function.getArguments()
@@ -536,48 +449,6 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     @Override
     public Expr visitIsNull(IsNull isNull, PlanTranslatorContext context) {
         return new IsNullPredicate(isNull.child().accept(this, context), false);
-    }
-
-    @Override
-    public Expr visitAggregateFunction(AggregateFunction function, PlanTranslatorContext context) {
-        List<Expr> catalogArguments = function.getArguments()
-                .stream()
-                .map(arg -> arg.accept(this, context))
-                .collect(ImmutableList.toImmutableList());
-        ImmutableList<Type> argTypes = catalogArguments.stream()
-                .map(arg -> arg.getType())
-                .collect(ImmutableList.toImmutableList());
-
-        List<Expr> arguments = function.getArguments()
-                .stream()
-                .map(arg -> new SlotRef(arg.getDataType().toCatalogDataType(), arg.nullable()))
-                .collect(ImmutableList.toImmutableList());
-        FunctionParams aggFnParams = new FunctionParams(false, arguments);
-
-        // translate isNullable()
-        NullableMode nullableMode = function.nullable()
-                ? NullableMode.ALWAYS_NULLABLE
-                : NullableMode.ALWAYS_NOT_NULLABLE;
-
-        // translate function from WindowFunction to old AggregateFunction
-        boolean isAnalyticFunction = true;
-        org.apache.doris.catalog.AggregateFunction catalogFunction = new org.apache.doris.catalog.AggregateFunction(
-                new FunctionName(function.getName()), argTypes,
-                function.getDataType().toCatalogDataType(),
-                function.getDataType().toCatalogDataType(),
-                function.hasVarArguments(),
-                null, "", "", null, "",
-                null, "", null, false,
-                isAnalyticFunction, false, TFunctionBinaryType.BUILTIN,
-                true, true, nullableMode
-        );
-
-        // generate FunctionCallExpr
-        boolean isMergeFn = false;
-        FunctionCallExpr functionCallExpr =
-                new FunctionCallExpr(catalogFunction, aggFnParams, aggFnParams, isMergeFn, catalogArguments);
-        functionCallExpr.setIsAnalyticFnCall(true);
-        return functionCallExpr;
     }
 
     // TODO: Supports for `distinct`

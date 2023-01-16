@@ -177,10 +177,10 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
 
         // case 4
         if (left.hasOffset()) {
-            withFrameBoundOffset(left);
+            checkFrameBoundOffset(left);
         }
         if (right.hasOffset()) {
-            withFrameBoundOffset(right);
+            checkFrameBoundOffset(right);
         }
 
         // case 5
@@ -207,7 +207,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * 2 boundOffset should be a positive INTEGER if FrameUnitsType == ROWS
      * 3 boundOffset should be a positive INTEGER or DECIMAL if FrameUnitsType == RANGE
      */
-    private void withFrameBoundOffset(FrameBoundary frameBoundary) {
+    private void checkFrameBoundOffset(FrameBoundary frameBoundary) {
         Expression offset = frameBoundary.getBoundOffset().get();
 
         // case 1

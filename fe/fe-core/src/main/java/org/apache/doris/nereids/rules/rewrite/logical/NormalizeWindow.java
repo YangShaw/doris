@@ -39,7 +39,7 @@ import java.util.Set;
 
 /**
  * NormalizeWindow: generate bottomProject for expressions within Window, and topProject for origin output of SQL
- * e.g. for SQL: SELECT k1#1, k2#2, SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5) FROM t
+ * e.g. SELECT k1#1, k2#2, SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5) FROM t
  *
  * Original Plan:
  * LogicalWindow(
@@ -48,12 +48,12 @@ import java.util.Set;
  *   )
  *
  * After Normalize:
- * Project(k1#1, k2#2, Alias(SlotReference#7)#7)
+ * LogicalProject(k1#1, k2#2, Alias(SlotReference#7)#6)
  * +-- LogicalWindow(
  *       outputs:[k1#1, k2#2, Alias(SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5)#6],
  *       windowExpressions:[Alias(SUM(k3#3) OVER (PARTITION BY k4#4 ORDER BY k5#5)#6]
  *       )
- *   +-- Project(k1#1, k2#2, k3#3, k4#4, k5#5)
+ *   +-- LogicalProject(k1#1, k2#2, k3#3, k4#4, k5#5)
  *
  */
 public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeToSlot {
