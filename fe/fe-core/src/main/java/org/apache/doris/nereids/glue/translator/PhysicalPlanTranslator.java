@@ -661,7 +661,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                 .collect(Collectors.toList());
 
         // analytic window
-        AnalyticWindow analyticWindow = physicalWindow.translateWindowFrame(windowFrameGroup.getWindowFrame());
+        AnalyticWindow analyticWindow = physicalWindow.translateWindowFrame(windowFrameGroup.getWindowFrame(), context);
 
         // 2. get bufferedTupleDesc from SortNode and compute isNullableMatched
         Map<ExprId, SlotRef> bufferedSlotRefForWindow = getBufferedSlotRefForWindow(windowFrameGroup, context);

@@ -20,6 +20,8 @@ package org.apache.doris.nereids.trees.plans.algebra;
 import org.apache.doris.analysis.AnalyticWindow;
 import org.apache.doris.analysis.Expr;
 import org.apache.doris.nereids.exceptions.AnalysisException;
+import org.apache.doris.nereids.glue.translator.ExpressionTranslator;
+import org.apache.doris.nereids.glue.translator.PlanTranslatorContext;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
@@ -27,6 +29,7 @@ import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundTyp
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.expressions.literal.Literal;
+import org.apache.doris.nereids.trees.plans.Plan;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -49,7 +52,7 @@ public interface Window {
     /**
      * translate WindowFrame to AnalyticWindow
      */
-    default AnalyticWindow translateWindowFrame(WindowFrame windowFrame) {
+    default AnalyticWindow translateWindowFrame(WindowFrame windowFrame, PlanTranslatorContext context) {
         FrameUnitsType frameUnits = windowFrame.getFrameUnits();
         FrameBoundary leftBoundary = windowFrame.getLeftBoundary();
         FrameBoundary rightBoundary = windowFrame.getRightBoundary();
@@ -57,8 +60,8 @@ public interface Window {
         AnalyticWindow.Type type = frameUnits == FrameUnitsType.ROWS
                 ? AnalyticWindow.Type.ROWS : AnalyticWindow.Type.RANGE;
 
-        AnalyticWindow.Boundary left = withFrameBoundary(leftBoundary);
-        AnalyticWindow.Boundary right = withFrameBoundary(rightBoundary);
+        AnalyticWindow.Boundary left = withFrameBoundary(leftBoundary, context);
+        AnalyticWindow.Boundary right = withFrameBoundary(rightBoundary, context);
 
         return new AnalyticWindow(type, left, right);
     }
@@ -66,13 +69,14 @@ public interface Window {
     /**
      * translate FrameBoundary to Boundary
      */
-    default AnalyticWindow.Boundary withFrameBoundary(FrameBoundary boundary) {
+    default AnalyticWindow.Boundary withFrameBoundary(FrameBoundary boundary, PlanTranslatorContext context) {
         FrameBoundType boundType = boundary.getFrameBoundType();
         BigDecimal offsetValue = null;
         Expr e = null;
         if (boundary.hasOffset()) {
             Expression boundOffset = boundary.getBoundOffset().get();
             offsetValue = new BigDecimal(((Literal) boundOffset).getDouble());
+            e = ExpressionTranslator.translate(boundOffset, context);
         }
 
         switch (boundType) {

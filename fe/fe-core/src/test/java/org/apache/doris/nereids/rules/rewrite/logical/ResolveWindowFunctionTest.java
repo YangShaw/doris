@@ -154,7 +154,7 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
         // String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
 
         // String sql2 = "select s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) from supplier";
-        String sql = "select s_city, sum(s_suppkey) over(partition by s_nation order by s_address) from supplier";
+        String sql = "select s_city, sum(s_suppkey) over(partition by s_nation order by s_address ROWS between 1 preceding and 1 following) from supplier";
         PlanChecker.from(connectContext).checkPlannerResult(sql);
     }
 
