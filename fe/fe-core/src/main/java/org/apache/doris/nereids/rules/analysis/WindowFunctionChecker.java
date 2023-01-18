@@ -45,9 +45,19 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * todo: the return type may be Void?
+ * Check and standardize Window expression:
+ *
+ * step 1: checkWindowBeforeFunc():
+ *  general checking for WindowFrame, including check OrderKeyList, set default right boundary, check offset if exists,
+ *  check correctness of boundaryType
+ * step 2: checkWindowFunction():
+ *  check window function, and different function has different checking rules .
+ *  If window frame not exits, set a unique default window frame according to their function type.
+ * step 3: checkWindowAfterFunc():
+ *  reverse window if necessary (just for first_value() and last_value()), and add a general default
+ *  window frame (RANGE between UNBOUNDED PRECEDING and CURRENT ROW)
  */
-public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, WindowFunctionChecker.CheckContext> {
+public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, Void> {
 
     private Window window;
 
@@ -62,8 +72,8 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
     /**
      * step 1: check windowFrame in window;
      */
-    public void checkWindowFrameBeforeFunc() {
-        window.getWindowFrame().ifPresent(this::checkWindowFrame);
+    public void checkWindowBeforeFunc() {
+        window.getWindowFrame().ifPresent(this::checkWindowFrameBeforeFunc);
     }
 
     /**
@@ -75,43 +85,25 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         // in checkWindowFrameBeforeFunc() we have confirmed that both left and right boundary are set as long as
         // windowFrame exists, therefore in all following visitXXX functions we don't need to check whether the right
         // boundary is null.
-        return window.accept(this, new CheckContext());
+        return window.accept(this, null);
     }
 
     /**
      * step 3: check window
      */
     public void checkWindowAfterFunc() {
-        // reverse windowFrame
         Optional<WindowFrame> windowFrame = window.getWindowFrame();
         if (windowFrame.isPresent()) {
-            WindowFrame wf = windowFrame.get();
-            if (wf.getRightBoundary().is(FrameBoundType.UNBOUNDED_FOLLOWING)
-                    && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
-                // reverse OrderKey's asc and isNullFirst;
-                // in checkWindowFrameBeforeFunc(), we have confirmed that orderKeyLists must exist
-                List<OrderKey> newOKList = window.getOrderKeyList().get().stream()
-                        .map(orderKey -> new OrderKey(orderKey.getExpr(), !orderKey.isAsc(), !orderKey.isNullFirst()))
-                        .collect(Collectors.toList());
-                window = window.withOrderKeyList(newOKList);
-
-                // reverse WindowFrame
-                // e.g. (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
-                window = window.withWindowFrame(wf.reverseWindow());
-
-                // reverse WindowFunction, which is used only for first_value() and last_value()
-                Expression windowFunction = window.getWindowFunction();
-                if (windowFunction instanceof FirstOrLastValue) {
-                    window = window.withChildren(ImmutableList.of(((FirstOrLastValue) windowFunction).reverse()));
-                }
-            }
+            // reverse windowFrame
+            checkWindowFrameAfterFunc(windowFrame.get());
         } else {
-            // this is equal to DEFAULT_WINDOW in class AnalyticWindow
-            window = window.withWindowFrame(new WindowFrame(FrameUnitsType.RANGE,
-                FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
+            setDefaultWindowFrameAfterFunc();
         }
-
     }
+
+    /* ********************************************************************************************
+     * methods for step 1
+     * ******************************************************************************************** */
 
     /**
      *
@@ -130,8 +122,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * 4. check value of boundOffset: Literal; Positive; Integer (for ROWS) or Numeric (for RANGE)
      * 5. check that boundOffset of left <= boundOffset of right
      */
-    private void checkWindowFrame(WindowFrame windowFrame) {
-
+    private void checkWindowFrameBeforeFunc(WindowFrame windowFrame) {
         // case 0
         if (!window.getOrderKeyList().isPresent()) {
             throw new AnalysisException("WindowFrame clause requires OrderBy clause");
@@ -231,12 +222,16 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         }
     }
 
+    /* ********************************************************************************************
+     * methods for step 2
+     * ******************************************************************************************** */
+
     /**
      * required WindowFrame: (UNBOUNDED PRECEDING, offset PRECEDING)
      * but in Spark, it is (offset PRECEDING, offset PRECEDING)
      */
     @Override
-    public Lag visitLag(Lag lag, CheckContext ctx) {
+    public Lag visitLag(Lag lag, Void ctx) {
         // check and complete window frame
         window.getWindowFrame().ifPresent(wf -> {
             throw new AnalysisException("WindowFrame for LAG() must be null");
@@ -265,7 +260,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * but in Spark, it is (offset FOLLOWING, offset FOLLOWING)
      */
     @Override
-    public Lead visitLead(Lead lead, CheckContext ctx) {
+    public Lead visitLead(Lead lead, Void ctx) {
         window.getWindowFrame().ifPresent(wf -> {
             throw new AnalysisException("WindowFrame for LEAD() must be null");
         });
@@ -313,7 +308,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      *        that NULLs should be added for the first Y rows.
      */
     @Override
-    public FirstOrLastValue visitFirstValue(FirstValue firstValue, CheckContext ctx) {
+    public FirstOrLastValue visitFirstValue(FirstValue firstValue, Void ctx) {
         Optional<WindowFrame> windowFrame = window.getWindowFrame();
         if (windowFrame.isPresent()) {
             WindowFrame wf = windowFrame.get();
@@ -339,7 +334,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
      */
     @Override
-    public Rank visitRank(Rank rank, CheckContext ctx) {
+    public Rank visitRank(Rank rank, Void ctx) {
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.RANGE,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
 
@@ -351,7 +346,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
      */
     @Override
-    public DenseRank visitDenseRank(DenseRank denseRank, CheckContext ctx) {
+    public DenseRank visitDenseRank(DenseRank denseRank, Void ctx) {
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
 
@@ -363,7 +358,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      * required WindowFrame: (UNBOUNDED PRECEDING, CURRENT ROW)
      */
     @Override
-    public RowNumber visitRowNumber(RowNumber rowNumber, CheckContext ctx) {
+    public RowNumber visitRowNumber(RowNumber rowNumber, Void ctx) {
         // check and complete window frame
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
@@ -388,8 +383,35 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         window = window.withWindowFrame(requiredFrame);
     }
 
-    /** context for window function check specifically */
-    public static class CheckContext {
+    /* ********************************************************************************************
+     * methods for step 3
+     * ******************************************************************************************** */
 
+    private void checkWindowFrameAfterFunc(WindowFrame wf) {
+        if (wf.getRightBoundary().is(FrameBoundType.UNBOUNDED_FOLLOWING)
+                && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
+            // reverse OrderKey's asc and isNullFirst;
+            // in checkWindowFrameBeforeFunc(), we have confirmed that orderKeyLists must exist
+            List<OrderKey> newOKList = window.getOrderKeyList().get().stream()
+                    .map(orderKey -> new OrderKey(orderKey.getExpr(), !orderKey.isAsc(), !orderKey.isNullFirst()))
+                    .collect(Collectors.toList());
+            window = window.withOrderKeyList(newOKList);
+
+            // reverse WindowFrame
+            // e.g. (3 preceding, unbounded following) -> (unbounded preceding, 3 following)
+            window = window.withWindowFrame(wf.reverseWindow());
+
+            // reverse WindowFunction, which is used only for first_value() and last_value()
+            Expression windowFunction = window.getWindowFunction();
+            if (windowFunction instanceof FirstOrLastValue) {
+                window = window.withChildren(ImmutableList.of(((FirstOrLastValue) windowFunction).reverse()));
+            }
+        }
+    }
+
+    private void setDefaultWindowFrameAfterFunc() {
+        // this is equal to DEFAULT_WINDOW in class AnalyticWindow
+        window = window.withWindowFrame(new WindowFrame(FrameUnitsType.RANGE,
+            FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary()));
     }
 }

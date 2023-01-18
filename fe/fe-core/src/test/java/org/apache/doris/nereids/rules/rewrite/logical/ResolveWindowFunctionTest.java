@@ -151,8 +151,6 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
 
     @Test
     public void testWindowGroup() {
-        connectContext.getSessionVariable().setEnableNereidsPlanner(true);
-        connectContext.getSessionVariable().setEnableNereidsTrace(true);
         // String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
 
         // String sql2 = "select s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) from supplier";

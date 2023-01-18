@@ -31,17 +31,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Check and standardize Window expression:
- *
- * step 1: checkWindowFrameBeforeFunc():
- *  general checking for WindowFrame, including check OrderKeyList, set default right boundary, check offset if exists,
- *  check correctness of boundaryType
- * step 2: checkWindowFunction():
- *  check window function, and different function has different checking rules .
- *  If window frame not exits, set a unique default window frame according to their function type.
- * step 3: checkWindowAfterFunc():
- *  reverse window if necessary (just for first_value() and last_value()), and add a general default
- *  window frame (RANGE between UNBOUNDED PRECEDING and CURRENT ROW)
+ * Check and standardize Window expression
  */
 public class CheckAndStandardizeWindowFunctionAndFrame extends OneRewriteRuleFactory {
 
@@ -53,21 +43,32 @@ public class CheckAndStandardizeWindowFunctionAndFrame extends OneRewriteRuleFac
         );
     }
 
-    /**
-     *  main procedure
-     */
     private LogicalWindow checkAndStandardize(LogicalWindow<GroupPlan> logicalWindow) {
-        List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
-        windowList = windowList.stream().map(windowAlias -> {
-            Window window = (Window) windowAlias.child(0);
-            WindowFunctionChecker checker = new WindowFunctionChecker(window);
-            checker.checkWindowFrameBeforeFunc();
-            checker.checkWindowFunction();
-            checker.checkWindowAfterFunc();
-            return (Alias) windowAlias.withChildren(checker.getWindow());
-        }).collect(Collectors.toList());
 
-        // todo: replace window exprs in outputExpressions with standardized windowExpressions
-        return logicalWindow.withChecked(logicalWindow.getOutputExpressions(), windowList, logicalWindow.child());
+        List<NamedExpression> newOutputExpressions = logicalWindow.getOutputExpressions().stream()
+                .map(expr -> {
+                    if (expr.anyMatch(Window.class::isInstance)) {
+                        Window window = (Window) expr.child(0);
+                        WindowFunctionChecker checker = new WindowFunctionChecker(window);
+                        checker.checkWindowBeforeFunc();
+                        checker.checkWindowFunction();
+                        checker.checkWindowAfterFunc();
+                        return (Alias) expr.withChildren(checker.getWindow());
+                    }
+                    return expr;
+                })
+                .collect(Collectors.toList());
+
+        //        List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
+        //        windowList = windowList.stream().map(windowAlias -> {
+        //            Window window = (Window) windowAlias.child(0);
+        //            WindowFunctionChecker checker = new WindowFunctionChecker(window);
+        //            checker.checkWindowBeforeFunc();
+        //            checker.checkWindowFunction();
+        //            checker.checkWindowAfterFunc();
+        //            return (Alias) windowAlias.withChildren(checker.getWindow());
+        //        }).collect(Collectors.toList());
+
+        return logicalWindow.withChecked(newOutputExpressions, logicalWindow.child());
     }
 }

@@ -30,14 +30,12 @@ public class NamedExpressionUtil {
     // for test only
     private static StatementContext statementContext = new StatementContext();
 
-    /**temp*/
     public static ExprId newExprId() {
         // this branch is for test only
-        //        if (ConnectContext.get() == null || ConnectContext.get().getStatementContext() == null) {
-        //            return statementContext.getNextExprId();
-        //        }
-        //        return ConnectContext.get().getStatementContext().getNextExprId();
-        return statementContext.getNextExprId();
+        if (ConnectContext.get() == null || ConnectContext.get().getStatementContext() == null) {
+            return statementContext.getNextExprId();
+        }
+        return ConnectContext.get().getStatementContext().getNextExprId();
     }
 
     /**

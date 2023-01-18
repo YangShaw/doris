@@ -111,14 +111,12 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
         return new LogicalWindow<>(outputExpressions, windowExpressions, isNormalized, isChecked, child());
     }
 
-    public LogicalWindow withNormalized(List<NamedExpression> outputExpressions,
-                                        List<NamedExpression> windowExpressions, Plan normalizedChild) {
+    public LogicalWindow withNormalized(List<NamedExpression> outputExpressions, Plan normalizedChild) {
         return new LogicalWindow(outputExpressions, windowExpressions, true, isChecked,
             Optional.empty(), Optional.empty(), normalizedChild);
     }
 
-    public LogicalWindow withChecked(List<NamedExpression> outputExpressions,
-                                        List<NamedExpression> windowExpressions, Plan child) {
+    public LogicalWindow withChecked(List<NamedExpression> outputExpressions, Plan child) {
         return new LogicalWindow(outputExpressions, windowExpressions, isNormalized, true,
             Optional.empty(), Optional.empty(), child);
     }

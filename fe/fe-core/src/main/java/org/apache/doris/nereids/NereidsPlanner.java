@@ -185,8 +185,6 @@ public class NereidsPlanner extends Planner {
             if (explainLevel == ExplainLevel.OPTIMIZED_PLAN || explainLevel == ExplainLevel.ALL_PLAN) {
                 optimizedPlan = physicalPlan;
             }
-            System.out.println("physical------------------------");
-            System.out.println(physicalPlan.treeString());
 
             return physicalPlan;
         }

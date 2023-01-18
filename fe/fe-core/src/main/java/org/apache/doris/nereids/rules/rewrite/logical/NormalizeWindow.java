@@ -78,22 +78,21 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
             // 2. handle window's outputs and windowExprs
             List<NamedExpression> normalizedOutputs = context.normalizeToUseSlotRef(outputs);
             Set<Window> normalizedWindows = ExpressionUtils.collect(normalizedOutputs, Window.class::isInstance);
+            Set<Slot> normalizedOthers = ExpressionUtils.collect(normalizedOutputs, SlotReference.class::isInstance);
 
             existedAlias = ExpressionUtils.collect(normalizedOutputs, Alias.class::isInstance);
             NormalizeToSlotContext ctxForWindows = NormalizeToSlotContext.buildContext(existedAlias, normalizedWindows);
 
             Set<NamedExpression> normalizedWindowsWithAlias =
                     ctxForWindows.pushDownToNamedExpression(normalizedWindows);
-            Set<Slot> normalizedOthers = ExpressionUtils.collect(normalizedOutputs, SlotReference.class::isInstance);
             List<NamedExpression> normalizedWindowOutputs = ImmutableList.<NamedExpression>builder()
                     .addAll(normalizedOthers)
                     .addAll(normalizedWindowsWithAlias)
                     .build();
             LogicalWindow normalizedLogicalWindow =
-                    logicalWindow.withNormalized(normalizedWindowOutputs,
-                            ImmutableList.copyOf(normalizedWindowsWithAlias), normalizedChild);
+                    logicalWindow.withNormalized(normalizedWindowOutputs, normalizedChild);
 
-            // 3. generate top projects
+            // 3. handle top projects
             List<NamedExpression> topProjects = ctxForWindows.normalizeToUseSlotRef(normalizedOutputs);
             return new LogicalProject<>(topProjects, normalizedLogicalWindow);
         }).toRule(RuleType.NORMALIZE_WINDOW);
@@ -101,20 +100,15 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
 
     private Set<Expression> collectExpressionsToBePushedDown(LogicalWindow<? extends Plan> logicalWindow) {
         // bottomProjects includes:
-        // 1. expressions from WindowSpec's partitionKeys and orderKeys
-        // 2. expressions from WindowFunctions arguments
-        // 3. other slots of outputExpressions
+        // 1. expressions from function and WindowSpec's partitionKeys and orderKeys
+        // 2. other slots of outputExpressions
 
         ImmutableSet.Builder<Expression> builder = new ImmutableSet.Builder<>();
 
-        Set<Window> windows = ExpressionUtils.collect(logicalWindow.getWindowExpressions(), Window.class::isInstance);
+        Set<Window> windows = ExpressionUtils.collect(logicalWindow.getOutputExpressions(), Window.class::isInstance);
         ImmutableSet<Expression> exprsInWindowSpec = windows.stream()
                 .flatMap(window -> window.getExpressionsInWindowSpec().stream())
                 .collect(ImmutableSet.toImmutableSet());
-
-        //        ImmutableSet<Expression> argsOfFunctionInWindow = windows.stream()
-        //                .flatMap(window -> window.getWindowFunction().getArguments().stream())
-        //                .collect(ImmutableSet.toImmutableSet());
 
         ImmutableSet<Expression> otherSlots = logicalWindow.getOutputExpressions().stream()
                 .filter(expr -> !expr.anyMatch(Window.class::isInstance))

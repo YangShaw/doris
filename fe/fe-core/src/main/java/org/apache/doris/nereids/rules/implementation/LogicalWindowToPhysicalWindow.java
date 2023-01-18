@@ -27,6 +27,7 @@ import org.apache.doris.nereids.properties.RequireProperties;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.logical.CheckAndStandardizeWindowFunctionAndFrame;
+import org.apache.doris.nereids.rules.rewrite.logical.ExtractWindowExpression;
 import org.apache.doris.nereids.rules.rewrite.logical.NormalizeWindow;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
@@ -58,7 +59,8 @@ import java.util.stream.Collectors;
  */
 @DependsRules({
     NormalizeWindow.class,
-    CheckAndStandardizeWindowFunctionAndFrame.class
+    CheckAndStandardizeWindowFunctionAndFrame.class,
+    ExtractWindowExpression.class
 })
 public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory {
 
@@ -76,6 +78,8 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
      *  main procedure
      */
     private PhysicalWindow resolveWindow(CascadesContext ctx, LogicalWindow<GroupPlan> logicalWindow) {
+        // todo: remove windowExpressions from LogicalWindow and rule ExtractWindowExpressions.
+        //  Only add this variable in PhysicalWindow
         List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
 
         /////////// create three kinds of groups and compute tupleSize of each
