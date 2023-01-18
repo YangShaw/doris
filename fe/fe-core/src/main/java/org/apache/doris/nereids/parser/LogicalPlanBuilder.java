@@ -1003,7 +1003,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
      * deal with window frame
      */
     public WindowFrame withWindowFrame(WindowFrameContext ctx) {
-        FrameUnitsType frameUnitsType = FrameUnitsType.valueOf(ctx.frameUnits().getText());
+        FrameUnitsType frameUnitsType = FrameUnitsType.valueOf(ctx.frameUnits().getText().toUpperCase());
 
         FrameBoundary leftBoundary = withFrameBound(ctx.start);
         if (ctx.end != null) {

@@ -29,7 +29,6 @@ import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundTyp
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameUnitsType;
 import org.apache.doris.nereids.trees.expressions.literal.Literal;
-import org.apache.doris.nereids.trees.plans.Plan;
 
 import java.math.BigDecimal;
 import java.util.List;
