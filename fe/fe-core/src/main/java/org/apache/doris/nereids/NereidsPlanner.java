@@ -186,6 +186,8 @@ public class NereidsPlanner extends Planner {
                 optimizedPlan = physicalPlan;
             }
 
+            System.out.println(physicalPlan.treeString());
+
             return physicalPlan;
         }
     }

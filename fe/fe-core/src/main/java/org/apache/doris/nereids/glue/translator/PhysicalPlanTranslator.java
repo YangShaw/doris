@@ -753,10 +753,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
 
         // 2. check if it is analyticSort
         PlanFragment currentFragment;
-        if (childFragment.getPlanRoot() instanceof ExchangeNode) {
-            Preconditions.checkState(sort.child() instanceof PhysicalDistribute,
-                    "When the ExchangeNode is child of AbstractPhysicalSort, "
-                        + "it should be created by PhysicalDistribute, but meet " + sort.child());
+        if (childFragment.getPlanRoot() instanceof ExchangeNode && sort.child() instanceof PhysicalDistribute) {
             PhysicalDistribute physicalDistribute = (PhysicalDistribute) sort.child();
             DataPartition dataPartition = hashSpecToDataPartition(physicalDistribute, context);
 
