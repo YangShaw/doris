@@ -164,7 +164,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
                 root);
         // todo: add isAnalyticSort to physicalWindow
         if (windowFrameGroup.partitionKeyList.isEmpty() && requiredOrderKeys.isEmpty()) {
-            return physicalWindow;
+            return physicalWindow.withRequirePropertiesAndChild(RequireProperties.of(), root);
         }
 
         PhysicalProperties properties;

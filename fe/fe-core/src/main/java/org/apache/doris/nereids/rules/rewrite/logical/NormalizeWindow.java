@@ -97,7 +97,7 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
                     .addAll(normalizedWindowWithAlias)
                     .build();
             LogicalWindow normalizedLogicalWindow = logicalWindow.withNormalized(
-                    outputsWithNormalizedWindow, Lists.newArrayList(normalizedWindowWithAlias), normalizedChild);
+                    outputsWithNormalizedWindow, normalizedChild);
 
             // 3. handle top projects
             existedAlias = ExpressionUtils.collect(outputsWithNormalizedWindow, Alias.class::isInstance);
