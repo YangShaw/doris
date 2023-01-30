@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.rules.rewrite.logical;
 
+import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.OneRewriteRuleFactory;
@@ -33,9 +34,13 @@ import org.apache.doris.nereids.util.ExpressionUtils;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * NormalizeWindow: generate bottomProject for expressions within Window, and topProject for origin output of SQL
@@ -76,24 +81,30 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
                     : new LogicalProject<>(ImmutableList.copyOf(bottomProjects), logicalWindow.child());
 
             // 2. handle window's outputs and windowExprs
+            // need to replace exprs with SlotReference in WindowSpec, due to LogicalWindow.getExpressions()
             List<NamedExpression> normalizedOutputs = context.normalizeToUseSlotRef(outputs);
-            Set<Window> normalizedWindows = ExpressionUtils.collect(normalizedOutputs, Window.class::isInstance);
+            List<Window> normalizedWindows = normalizeToUseSlotRefInWindow(
+                    ExpressionUtils.collect(normalizedOutputs, Window.class::isInstance), context);
             Set<Slot> normalizedOthers = ExpressionUtils.collect(normalizedOutputs, SlotReference.class::isInstance);
 
             existedAlias = ExpressionUtils.collect(normalizedOutputs, Alias.class::isInstance);
-            NormalizeToSlotContext ctxForWindows = NormalizeToSlotContext.buildContext(existedAlias, normalizedWindows);
+            NormalizeToSlotContext ctxForWindows = NormalizeToSlotContext.buildContext(
+                    existedAlias, Sets.newHashSet(normalizedWindows));
 
-            Set<NamedExpression> normalizedWindowsWithAlias =
-                    ctxForWindows.pushDownToNamedExpression(normalizedWindows);
+            Set<NamedExpression> normalizedWindowWithAlias = ctxForWindows.pushDownToNamedExpression(normalizedWindows);
             List<NamedExpression> normalizedWindowOutputs = ImmutableList.<NamedExpression>builder()
                     .addAll(normalizedOthers)
-                    .addAll(normalizedWindowsWithAlias)
+                    .addAll(normalizedWindowWithAlias)
                     .build();
             LogicalWindow normalizedLogicalWindow =
                     logicalWindow.withNormalized(normalizedWindowOutputs, normalizedChild);
 
             // 3. handle top projects
-            List<NamedExpression> topProjects = ctxForWindows.normalizeToUseSlotRef(normalizedOutputs);
+            existedAlias = ExpressionUtils.collect(normalizedWindowOutputs, Alias.class::isInstance);
+            NormalizeToSlotContext ctxForTopProject = NormalizeToSlotContext.buildContext(
+                    existedAlias, Sets.newHashSet(normalizedWindowOutputs)
+            );
+            List<NamedExpression> topProjects = ctxForTopProject.normalizeToUseSlotRef(normalizedWindowOutputs);
             return new LogicalProject<>(topProjects, normalizedLogicalWindow);
         }).toRule(RuleType.NORMALIZE_WINDOW);
     }
@@ -117,5 +128,38 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
         return builder.addAll(exprsInWindowSpec)
             .addAll(otherSlots)
             .build();
+    }
+
+    private List<Window> normalizeToUseSlotRefInWindow(Set<Window> windows, NormalizeToSlotContext context) {
+        List<Window> normalizedWindows = Lists.newArrayList();
+        for (Window window : windows) {
+            Expression newFunction = context.normalizeToUseSlotRef(window.children()).get(0);
+
+            Optional<List<Expression>> newPartitionKeyList;
+            if (window.getPartitionKeyList().isPresent()) {
+                newPartitionKeyList = Optional.of(context.normalizeToUseSlotRef(window.getPartitionKeyList().get()));
+            } else {
+                newPartitionKeyList = Optional.empty();
+            }
+
+            // todo: trick; use OrderExpression to save window's OrderKeyList
+            Optional<List<OrderKey>> newOrderKeyList;
+            if (window.getOrderKeyList().isPresent()) {
+                newOrderKeyList = Optional.of(
+                    window.getOrderKeyList().get().stream().map(orderKey -> {
+                        Expression newExpr = context.normalizeToUseSlotRef(orderKey.getExpr());
+                        if (newExpr != null && newExpr == orderKey.getExpr()) {
+                            return orderKey;
+                        }
+                        return new OrderKey(newExpr, orderKey.isAsc(), orderKey.isNullFirst());
+                    }).collect(Collectors.toList())
+                );
+            } else {
+                newOrderKeyList = Optional.empty();
+            }
+            normalizedWindows.add(new Window(
+                    newFunction, newPartitionKeyList, newOrderKeyList, window.getWindowFrame()));
+        }
+        return normalizedWindows;
     }
 }
