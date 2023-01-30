@@ -36,11 +36,8 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
-import org.apache.doris.nereids.trees.expressions.SubqueryExpr;
 import org.apache.doris.nereids.trees.expressions.Window;
-import org.apache.doris.nereids.trees.expressions.functions.ExpressionTrait;
 import org.apache.doris.nereids.trees.expressions.functions.Function;
-import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
 import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionRewriter;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.JoinType;
@@ -531,8 +528,7 @@ public class BindSlotReference implements AnalysisRuleFactory {
         return new LogicalWindow<>(outputExpressions, logicalWindow.child(0));
     }
 
-    private Plan bindSort(
-        LogicalSort<? extends Plan> sort, Plan plan, CascadesContext ctx) {
+    private Plan bindSort(LogicalSort<? extends Plan> sort, Plan plan, CascadesContext ctx) {
         // 1. We should deduplicate the slots, otherwise the binding process will fail due to the
         //    ambiguous slots exist.
         // 2. try to bound order-key with agg output, if failed, try to bound with output of agg.child
@@ -574,8 +570,7 @@ public class BindSlotReference implements AnalysisRuleFactory {
             .collect(ImmutableList.toImmutableList());
     }
 
-    private <E extends Expression> List<E> bind(List<E> exprList, List<Plan> inputs, Plan plan,
-            CascadesContext cascadesContext) {
+    private <E extends Expression> List<E> bind(List<E> exprList, List<Plan> inputs, CascadesContext cascadesContext) {
         return exprList.stream()
             .map(expr -> bind(expr, inputs, cascadesContext))
             .collect(Collectors.toList());
