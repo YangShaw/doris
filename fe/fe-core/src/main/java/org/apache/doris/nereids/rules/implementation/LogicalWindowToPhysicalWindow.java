@@ -163,12 +163,21 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
                 logicalWindow.getLogicalProperties(),
                 root);
         // todo: add isAnalyticSort to physicalWindow
+        if (windowFrameGroup.partitionKeyList.isEmpty() && requiredOrderKeys.isEmpty()) {
+            return physicalWindow;
+        }
 
-        // todo: add new ShuffleType for window, like ShuffleType.WINDOW
-        PhysicalProperties properties = PhysicalProperties.createHash(
+        PhysicalProperties properties;
+        if (windowFrameGroup.partitionKeyList.isEmpty()) {
+            properties = new PhysicalProperties(new OrderSpec(requiredOrderKeys));
+        } else {
+            // todo: add new ShuffleType for window, like ShuffleType.WINDOW
+            properties = PhysicalProperties.createHash(
                 windowFrameGroup.partitionKeyList, DistributionSpecHash.ShuffleType.ENFORCED);
-        // PhysicalProperties properties = new PhysicalProperties(new OrderSpec(requiredOrderKeys));
-        properties = properties.withOrderSpec(new OrderSpec(requiredOrderKeys));
+            // requiredOrderKeys contain partitionKeys, so there is no need to check if requiredOrderKeys.isEmpty()
+            properties = properties.withOrderSpec(new OrderSpec(requiredOrderKeys));
+        }
+
         RequireProperties requireProperties = RequireProperties.of(properties);
         return physicalWindow.withRequirePropertiesAndChild(requireProperties, root);
     }

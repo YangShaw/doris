@@ -92,19 +92,19 @@ public class NormalizeWindow extends OneRewriteRuleFactory implements NormalizeT
                     existedAlias, Sets.newHashSet(normalizedWindows));
 
             Set<NamedExpression> normalizedWindowWithAlias = ctxForWindows.pushDownToNamedExpression(normalizedWindows);
-            List<NamedExpression> normalizedWindowOutputs = ImmutableList.<NamedExpression>builder()
+            List<NamedExpression> outputsWithNormalizedWindow = ImmutableList.<NamedExpression>builder()
                     .addAll(normalizedOthers)
                     .addAll(normalizedWindowWithAlias)
                     .build();
-            LogicalWindow normalizedLogicalWindow =
-                    logicalWindow.withNormalized(normalizedWindowOutputs, normalizedChild);
+            LogicalWindow normalizedLogicalWindow = logicalWindow.withNormalized(
+                    outputsWithNormalizedWindow, Lists.newArrayList(normalizedWindowWithAlias), normalizedChild);
 
             // 3. handle top projects
-            existedAlias = ExpressionUtils.collect(normalizedWindowOutputs, Alias.class::isInstance);
+            existedAlias = ExpressionUtils.collect(outputsWithNormalizedWindow, Alias.class::isInstance);
             NormalizeToSlotContext ctxForTopProject = NormalizeToSlotContext.buildContext(
-                    existedAlias, Sets.newHashSet(normalizedWindowOutputs)
+                    existedAlias, Sets.newHashSet(outputsWithNormalizedWindow)
             );
-            List<NamedExpression> topProjects = ctxForTopProject.normalizeToUseSlotRef(normalizedWindowOutputs);
+            List<NamedExpression> topProjects = ctxForTopProject.normalizeToUseSlotRef(outputsWithNormalizedWindow);
             return new LogicalProject<>(topProjects, normalizedLogicalWindow);
         }).toRule(RuleType.NORMALIZE_WINDOW);
     }
