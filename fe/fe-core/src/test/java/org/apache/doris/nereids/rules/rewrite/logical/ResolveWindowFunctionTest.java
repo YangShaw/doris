@@ -145,6 +145,7 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
         PlanChecker.from(connectContext).checkPlannerResult(lag);
     }
 
+    @Test
     public void testWindowGroup() {
         // String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
 
@@ -158,9 +159,12 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
 
     @Test
     public void testUnit() {
+        // String sql = "select regexp_replace(s_city, s_city, s_city) from supplier order by s_city, s_city, s_city";
+        String sql3 = "select aes_decrypt(s_city, s_city, s_city) from supplier order by s_city, s_city, s_city";
+
         // String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
-        String sql2 = "select s_city as s_address from supplier order by s_city, s_address, s_suppkey, s_nation";
-        PlanChecker.from(connectContext).checkPlannerResult(sql2);
+        // String sql2 = "select s_city as s_address from supplier order by s_city, s_address, s_suppkey, s_nation";
+        PlanChecker.from(connectContext).checkPlannerResult(sql3);
     }
 
     public void test() {

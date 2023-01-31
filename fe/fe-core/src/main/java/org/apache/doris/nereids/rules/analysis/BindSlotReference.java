@@ -525,6 +525,8 @@ public class BindSlotReference implements AnalysisRuleFactory {
             }
             return bind(expression, inputs, cascadesContext);
         }).collect(Collectors.toList());
+        // todo: boundExceptions?
+        outputExpressions = flatBoundStar(outputExpressions, ImmutableList.of());
         return new LogicalWindow<>(outputExpressions, logicalWindow.child(0));
     }
 
