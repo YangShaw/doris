@@ -345,10 +345,10 @@ public class SortNode extends PlanNode {
         }
 
         // for AnalyticEvalNode
-        List<SlotDescriptor> sortTupleSlots = tupleDescriptor.getSlots();
-        outputSmap = new ExprSubstitutionMap();
-        for (int i = 0; i < orderingExpr.size(); i++) {
-            outputSmap.put(orderingExpr.get(i), new SlotRef(sortTupleSlots.get(i)));
-        }
+        //        List<SlotDescriptor> sortTupleSlots = tupleDescriptor.getSlots();
+        //        outputSmap = new ExprSubstitutionMap();
+        //        for (int i = 0; i < orderingExpr.size(); i++) {
+        //            outputSmap.put(orderingExpr.get(i), new SlotRef(sortTupleSlots.get(i)));
+        //        }
     }
 }

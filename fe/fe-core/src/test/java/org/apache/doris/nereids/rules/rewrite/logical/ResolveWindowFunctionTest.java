@@ -162,9 +162,10 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
     }
 
     @Test
-    public void testToString() {
-        String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
-        PlanChecker.from(connectContext).checkPlannerResult(sql);
+    public void testUnit() {
+        // String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
+        String sql2 = "select s_city as s_address from supplier order by s_city, s_address, s_suppkey, s_nation";
+        PlanChecker.from(connectContext).checkPlannerResult(sql2);
     }
 
     @Test

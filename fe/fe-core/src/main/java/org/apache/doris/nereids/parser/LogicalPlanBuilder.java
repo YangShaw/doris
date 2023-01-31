@@ -1570,11 +1570,11 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                 return new LogicalRepeat<>(groupingSets, namedExpressions, input);
             } else {
                 List<Expression> groupByExpressions = visit(groupingElementContext.expression(), Expression.class);
-                if (containsWindowExpressions(namedExpressions)) {
-                    return new LogicalWindow<>(namedExpressions,
-                            new LogicalAggregate(groupByExpressions, namedExpressions, input)
-                    );
-                }
+//                if (containsWindowExpressions(namedExpressions)) {
+//                    return new LogicalWindow<>(namedExpressions,
+//                            new LogicalAggregate(groupByExpressions, namedExpressions, input)
+//                    );
+//                }
                 return new LogicalAggregate<>(groupByExpressions, namedExpressions, input);
             }
         });
