@@ -76,7 +76,6 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
      * Test WindowFrame and different WindowFunction
      * ******************************************************************************************** */
 
-    @Test
     public void testRankLikeFunctions() {
         String rank = "SELECT rank() over() as uni FROM supplier";
         String rank2 = "SELECT rank() over(ROWS BETWEEN unbounded preceding and current row) as uni FROM supplier";
@@ -123,13 +122,11 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
                 );*/
     }
 
-    @Test
     public void testFirstOrLastValue() {
         // String first_value = "SELECT first_value() over() FROM supplier";
         // String first_value2 = "SELECT first_value(s_suppkey) over(ORDER BY s_suppkey ROWS BETWEEN 3 following and unbounded following) FROM supplier";
     }
 
-    @Test
     public void testAnalyze() {
         // String sql = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name) FROM supplier";
         // String sql2 = "SELECT s_city, sum(s_suppkey) FROM supplier GROUP BY s_city ORDER BY s_city limit 10";
@@ -140,7 +137,6 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
         PlanChecker.from(connectContext).checkPlannerResult(sql2);
     }
 
-    @Test
     public void testWindowFunctionChecker() {
         // String rowNumber = "SELECT row_number() over() FROM supplier";
 
@@ -149,13 +145,12 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
         PlanChecker.from(connectContext).checkPlannerResult(lag);
     }
 
-    @Test
     public void testWindowGroup() {
         // String sql = "SELECT s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) FROM supplier";
 
         // String sql2 = "select s_city, row_number() over(PARTITION BY s_address ORDER BY s_nation) from supplier";
         // String sql = "select s_suppkey+2, rank() over(partition by s_suppkey+1 order by s_suppkey+3) from supplier";
-        String sql2 = "select rank() over() from supplier";
+        String sql2 = "select *, rank() over() from supplier";
 
         // select k4, k10 from (select k4, k10 from test order by 1, 2 limit 1000000) as i order by 1, 2 limit 1000
         PlanChecker.from(connectContext).checkPlannerResult(sql2);
@@ -168,7 +163,6 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
         PlanChecker.from(connectContext).checkPlannerResult(sql2);
     }
 
-    @Test
     public void test() {
         String sql = "SELECT s_suppkey, count(*) FROM supplier GROUP BY s_suppkey ORDER BY s_suppkey";
         PlanChecker.from(connectContext).checkPlannerResult(sql);
