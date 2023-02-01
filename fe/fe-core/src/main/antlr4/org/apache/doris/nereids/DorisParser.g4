@@ -343,8 +343,8 @@ windowSpec
     ;
 
 windowFrame
-    : frameUnits start=frameBound
-    | frameUnits BETWEEN start=frameBound AND end=frameBound
+    : frameUnits start=frameBoundary
+    | frameUnits BETWEEN start=frameBoundary AND end=frameBoundary
     ;
 
 frameUnits
@@ -352,7 +352,7 @@ frameUnits
     | RANGE
     ;
 
-frameBound
+frameBoundary
     : UNBOUNDED boundType=(PRECEDING | FOLLOWING)
     | boundType=CURRENT ROW
     | expression boundType=(PRECEDING | FOLLOWING)

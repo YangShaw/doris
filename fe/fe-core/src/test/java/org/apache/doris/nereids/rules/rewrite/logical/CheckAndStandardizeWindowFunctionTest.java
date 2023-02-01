@@ -207,7 +207,6 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
             PlanChecker.from(MemoTestUtils.createConnectContext(), root)
                     .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame());
         }, "Not throw expected exception.");
-        System.out.println(exception.getMessage());
         Assertions.assertTrue(exception.getMessage().contains(errorMsg));
     }
 }
