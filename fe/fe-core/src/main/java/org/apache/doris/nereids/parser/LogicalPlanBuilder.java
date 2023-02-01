@@ -977,7 +977,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
     /**
      * deal with window function definition
      */
-    public Window withWindowSpec(WindowSpecContext ctx, Expression function) {
+    private Window withWindowSpec(WindowSpecContext ctx, Expression function) {
         Optional<List<Expression>> partitionKeys = optionalVisit(ctx.partitionClause(),
                 () -> visit(ctx.partitionClause().expression(), Expression.class));
 
@@ -1001,7 +1001,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
     /**
      * deal with window frame
      */
-    public WindowFrame withWindowFrame(WindowFrameContext ctx) {
+    private WindowFrame withWindowFrame(WindowFrameContext ctx) {
         FrameUnitsType frameUnitsType = FrameUnitsType.valueOf(ctx.frameUnits().getText().toUpperCase());
 
         FrameBoundary leftBoundary = withFrameBound(ctx.start);
@@ -1570,11 +1570,6 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                 return new LogicalRepeat<>(groupingSets, namedExpressions, input);
             } else {
                 List<Expression> groupByExpressions = visit(groupingElementContext.expression(), Expression.class);
-                //if (containsWindowExpressions(namedExpressions)) {
-                //    return new LogicalWindow<>(namedExpressions,
-                //            new LogicalAggregate(groupByExpressions, namedExpressions, input)
-                //    );
-                //}
                 return new LogicalAggregate<>(groupByExpressions, namedExpressions, input);
             }
         });

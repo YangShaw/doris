@@ -45,7 +45,7 @@ public class FrameBoundary {
     }
 
     public static FrameBoundary newPrecedingBoundary(Expression boundValue) {
-        return new FrameBoundary(Optional.of(boundValue), FrameBoundType.UNBOUNDED_PRECEDING);
+        return new FrameBoundary(Optional.of(boundValue), FrameBoundType.PRECEDING);
     }
 
     public static FrameBoundary newFollowingBoundary() {
@@ -53,7 +53,7 @@ public class FrameBoundary {
     }
 
     public static FrameBoundary newFollowingBoundary(Expression boundValue) {
-        return new FrameBoundary(Optional.of(boundValue), FrameBoundType.UNBOUNDED_FOLLOWING);
+        return new FrameBoundary(Optional.of(boundValue), FrameBoundType.FOLLOWING);
     }
 
     public static FrameBoundary newCurrentRowBoundary() {

@@ -343,12 +343,5 @@ public class SortNode extends PlanNode {
         for (int i = 0; i < resolvedTupleExprs.size(); i++) {
             nullabilityChangedFlags.add(false);
         }
-
-        // for AnalyticEvalNode
-        //        List<SlotDescriptor> sortTupleSlots = tupleDescriptor.getSlots();
-        //        outputSmap = new ExprSubstitutionMap();
-        //        for (int i = 0; i < orderingExpr.size(); i++) {
-        //            outputSmap.put(orderingExpr.get(i), new SlotRef(sortTupleSlots.get(i)));
-        //        }
     }
 }

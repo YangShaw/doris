@@ -251,7 +251,6 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         }
         lag.setDefaultValue(TypeCoercionUtils.castIfNotSameType(defaultValue, column.getDataType()));
 
-        // todo: should OrderKey be required?
         return lag;
     }
 
@@ -279,7 +278,6 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
         }
         lead.setDefaultValue(TypeCoercionUtils.castIfNotSameType(defaultValue, column.getDataType()));
 
-        // todo: should OrderKey be required?
         return lead;
     }
 
@@ -347,7 +345,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      */
     @Override
     public DenseRank visitDenseRank(DenseRank denseRank, Void ctx) {
-        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
+        WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.RANGE,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
 
         checkAndCompleteWindowFrame(requiredFrame, denseRank.getName());
@@ -364,8 +362,6 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
 
         checkAndCompleteWindowFrame(requiredFrame, rowNumber.getName());
-
-        // todo: should OrderKey be required?
         return rowNumber;
     }
 

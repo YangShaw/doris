@@ -661,14 +661,4 @@ public class PlannerTest extends TestWithFeService {
             Assertions.assertFalse(plan1.contains("SORT LIMIT:"));
             }
     }
-
-    @Test
-    public void testForAnalyticFn() throws Exception {
-        String sql1 = "select k3, rank() over(partition by substring(k1, 2) order by k2 + 1) from db1.tbl1";
-        StmtExecutor stmtExecutor = new StmtExecutor(connectContext, sql1);
-        stmtExecutor.execute();
-        Planner planner = stmtExecutor.planner();
-        String plan = planner.getExplainString(new ExplainOptions(true, false));
-        System.out.println(plan);
-    }
 }
