@@ -753,6 +753,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
 
         // 2. check if it is analyticSort
         PlanFragment currentFragment;
+        boolean useTopN = true;
         if (childFragment.getPlanRoot() instanceof ExchangeNode && sort.child() instanceof PhysicalDistribute) {
             PhysicalDistribute physicalDistribute = (PhysicalDistribute) sort.child();
             DataPartition dataPartition = hashSpecToDataPartition(physicalDistribute, context);
@@ -763,6 +764,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
             childFragment.setPlanRoot(exchangeNode.getChild(0));
             childFragment.setDestination(exchangeNode);
             context.addPlanFragment(currentFragment);
+            useTopN = false;
         } else {
             currentFragment = childFragment;
         }
@@ -777,8 +779,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // 5. fill in SortInfo members
         SortInfo sortInfo = new SortInfo(newOrderingExprList, ascOrderList, nullsFirstParamList, tupleDesc);
         PlanNode childNode = currentFragment.getPlanRoot();
-        boolean isTopN = sort instanceof PhysicalTopN ? true : false;
-        SortNode sortNode = new SortNode(context.nextPlanNodeId(), childNode, sortInfo, isTopN);
+        SortNode sortNode = new SortNode(context.nextPlanNodeId(), childNode, sortInfo, useTopN);
         sortNode.finalizeForNereids(tupleDesc, sortTupleOutputList, oldOrderingExprList);
         if (sort.getStats() != null) {
             sortNode.setCardinality((long) sort.getStats().getRowCount());

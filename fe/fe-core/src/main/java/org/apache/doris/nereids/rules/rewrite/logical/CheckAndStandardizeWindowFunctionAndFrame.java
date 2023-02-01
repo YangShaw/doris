@@ -58,17 +58,6 @@ public class CheckAndStandardizeWindowFunctionAndFrame extends OneRewriteRuleFac
                     return expr;
                 })
                 .collect(Collectors.toList());
-
-        //        List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
-        //        windowList = windowList.stream().map(windowAlias -> {
-        //            Window window = (Window) windowAlias.child(0);
-        //            WindowFunctionChecker checker = new WindowFunctionChecker(window);
-        //            checker.checkWindowBeforeFunc();
-        //            checker.checkWindowFunction();
-        //            checker.checkWindowAfterFunc();
-        //            return (Alias) windowAlias.withChildren(checker.getWindow());
-        //        }).collect(Collectors.toList());
-
         return logicalWindow.withChecked(newOutputExpressions, logicalWindow.child());
     }
 }

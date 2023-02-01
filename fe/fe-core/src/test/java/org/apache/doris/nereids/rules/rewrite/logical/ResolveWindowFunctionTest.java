@@ -127,14 +127,15 @@ public class ResolveWindowFunctionTest extends TestWithFeService implements Patt
         // String first_value2 = "SELECT first_value(s_suppkey) over(ORDER BY s_suppkey ROWS BETWEEN 3 following and unbounded following) FROM supplier";
     }
 
+    @Test
     public void testAnalyze() {
         // String sql = "SELECT sum(s_suppkey) OVER(PARTITION BY s_nation ORDER BY s_name) FROM supplier";
         // String sql2 = "SELECT s_city, sum(s_suppkey) FROM supplier GROUP BY s_city ORDER BY s_city limit 10";
         // String sql2 = "SELECT s_city FROM supplier GROUP BY s_city ORDER BY s_city limit 10";
         // String sql2 = "SELECT s_city FROM supplier ORDER BY s_city limit 10";
-        String sql2 = "SELECT s_city FROM supplier ORDER BY s_city limit 10";
-
-        PlanChecker.from(connectContext).checkPlannerResult(sql2);
+        // String sql2 = "SELECT s_city FROM supplier ORDER BY s_city limit 10";
+        String sql = "select count(1) from (select s_suppkey from supplier order by s_suppkey desc) t";
+        PlanChecker.from(connectContext).checkPlannerResult(sql);
     }
 
     public void testWindowFunctionChecker() {
