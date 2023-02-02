@@ -59,8 +59,8 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
                          Optional<GroupExpression> groupExpression, Optional<LogicalProperties> logicalProperties,
                          CHILD_TYPE child) {
         super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
-        this.outputExpressions = ImmutableList.copyOf(Objects.requireNonNull(outputExpressions, "output expressions" +
-                "in LogicalWindow cannot be null"));
+        this.outputExpressions = ImmutableList.copyOf(Objects.requireNonNull(outputExpressions, "output expressions"
+                + "in LogicalWindow cannot be null"));
         this.isChecked = isChecked;
     }
 

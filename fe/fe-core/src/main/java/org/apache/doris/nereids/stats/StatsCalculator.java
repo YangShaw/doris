@@ -628,26 +628,25 @@ public class StatsCalculator extends DefaultPlanVisitor<StatsDeriveResult, Void>
         StatsDeriveResult stats = groupExpression.childStatistics(0);
         Map<Id, ColumnStatistic> childColumnStats = stats.getSlotIdToColumnStats();
         Map<Id, ColumnStatistic> columnStatisticMap = windowOperator.getOutputExpressions().stream()
-            .map(expr -> {
-                ColumnStatistic value = null;
-                Set<Slot> slots = expr.getInputSlots();
-                if (slots.isEmpty()) {
-                    value = ColumnStatistic.DEFAULT;
-                } else {
-                    for (Slot slot : slots) {
-                        if (childColumnStats.containsKey(slot.getExprId())) {
-                            value = childColumnStats.get(slot.getExprId());
-                            break;
+                .map(expr -> {
+                    ColumnStatistic value = null;
+                    Set<Slot> slots = expr.getInputSlots();
+                    if (slots.isEmpty()) {
+                        value = ColumnStatistic.DEFAULT;
+                    } else {
+                        for (Slot slot : slots) {
+                            if (childColumnStats.containsKey(slot.getExprId())) {
+                                value = childColumnStats.get(slot.getExprId());
+                                break;
+                            }
+                        }
+                        if (value == null) {
+                            // todo: how to set stats?
+                            value = ColumnStatistic.DEFAULT;
                         }
                     }
-                    if (value == null) {
-                        // todo: how to set stats?
-                        value = ColumnStatistic.DEFAULT;
-                    }
-                }
-                return Pair.of(expr.toSlot().getExprId(), value);
-            })
-            .collect(Collectors.toMap(Pair::key, Pair::value));
+                    return Pair.of(expr.toSlot().getExprId(), value);
+                }).collect(Collectors.toMap(Pair::key, Pair::value));
         return new StatsDeriveResult(stats.getRowCount(), columnStatisticMap);
     }
 }

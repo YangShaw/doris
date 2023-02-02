@@ -27,7 +27,7 @@ import org.apache.doris.nereids.properties.RequireProperties;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.logical.CheckAndStandardizeWindowFunctionAndFrame;
-import org.apache.doris.nereids.rules.rewrite.logical.ExtractWindowExpression;
+import org.apache.doris.nereids.rules.rewrite.logical.ExtractAndNormalizeWindowExpression;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.OrderExpression;
@@ -59,7 +59,7 @@ import java.util.stream.Collectors;
  */
 @DependsRules({
     CheckAndStandardizeWindowFunctionAndFrame.class,
-    ExtractWindowExpression.class
+    ExtractAndNormalizeWindowExpression.class
 })
 public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory {
 
@@ -368,8 +368,8 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
 
         public WindowFrameGroup(NamedExpression windowAlias) {
             WindowExpression window = (WindowExpression) (windowAlias.child(0));
-            partitionKeys = window.getPartitionKeyList();
-            orderKeys = window.getOrderKeyList();
+            partitionKeys = window.getPartitionKeys();
+            orderKeys = window.getOrderKeys();
             windowFrame = window.getWindowFrame().get();
             groups.add(windowAlias);
         }
@@ -385,8 +385,8 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             // but not in OrderKey' comparison.
             WindowExpression window = (WindowExpression) (windowAlias.child(0));
 
-            List<Expression> otherPartitionKeyList = window.getPartitionKeyList();
-            List<OrderExpression> otherOrderKeyList = window.getOrderKeyList();
+            List<Expression> otherPartitionKeyList = window.getPartitionKeys();
+            List<OrderExpression> otherOrderKeyList = window.getOrderKeys();
             WindowFrame otherWindowFrame = window.getWindowFrame().get();
 
             // for PartitionKeys, we don't care about the order of each key, so we use isEqualCollection() to compare

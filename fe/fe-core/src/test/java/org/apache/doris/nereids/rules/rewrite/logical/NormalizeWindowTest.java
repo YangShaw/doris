@@ -71,7 +71,7 @@ public class NormalizeWindowTest implements PatternMatchSupported {
         Plan root = new LogicalProject<>(outputExpressions, rStudent);
 
         PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                .applyTopDown(new ExtractWindowExpression())
+                .applyTopDown(new ExtractAndNormalizeWindowExpression())
                 .matchesFromRoot(
                         logicalProject(
                                 logicalWindow(
@@ -122,7 +122,7 @@ public class NormalizeWindowTest implements PatternMatchSupported {
         Plan root = new LogicalProject<>(outputExpressions, rStudent);
 
         PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                .applyTopDown(new ExtractWindowExpression())
+                .applyTopDown(new ExtractAndNormalizeWindowExpression())
                 .matchesFromRoot(
                         logicalProject(
                                 logicalWindow(
@@ -139,8 +139,8 @@ public class NormalizeWindowTest implements PatternMatchSupported {
                                 ).when(logicalWindow -> {
                                     List<NamedExpression> outputs = logicalWindow.getOutputExpressions();
                                     WindowExpression newWindow = (WindowExpression) outputs.get(1).child(0);
-                                    Expression pk = newWindow.getPartitionKeyList().get(0);
-                                    OrderExpression ok = newWindow.getOrderKeyList().get(0);
+                                    Expression pk = newWindow.getPartitionKeys().get(0);
+                                    OrderExpression ok = newWindow.getOrderKeys().get(0);
                                     return !newWindow.equals(windowAlias.child(0))
                                         && pk instanceof SlotReference
                                         && ok.child() instanceof SlotReference;

@@ -109,9 +109,17 @@ public class NormalizeAggregate extends OneRewriteRuleFactory implements Normali
             LogicalAggregate<Plan> normalizedAggregate = aggregate.withNormalized(
                     (List) normalizedGroupBy, normalizedAggregateOutput, normalizedChild);
 
+            // exclude same-name functions in WindowExpression
+            List<NamedExpression> upperProjects = normalizeOutputPhase1.stream()
+                    .map(expr -> {
+                        if (expr.anyMatch(WindowExpression.class::isInstance)) {
+                            return expr;
+                        }
+                        return aggregateFunctionToSlotContext.normalizeToUseSlotRef(expr);
+                    }).collect(Collectors.toList());
             // replace aggregate function to slot
-            List<NamedExpression> upperProjects =
-                    aggregateFunctionToSlotContext.normalizeToUseSlotRef(normalizeOutputPhase1);
+            //            List<NamedExpression> upperProjects =
+            //                    aggregateFunctionToSlotContext.normalizeToUseSlotRef(normalizeOutputPhase1);
             return new LogicalProject<>(upperProjects, normalizedAggregate);
         }).toRule(RuleType.NORMALIZE_AGGREGATE);
     }

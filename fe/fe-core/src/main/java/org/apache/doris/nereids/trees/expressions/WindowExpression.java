@@ -40,37 +40,37 @@ public class WindowExpression extends Expression implements PropagateNullable {
 
     private final Expression function;
 
-    private final List<Expression> partitionKeyList;
+    private final List<Expression> partitionKeys;
 
-    private final List<OrderExpression> orderKeyList;
+    private final List<OrderExpression> orderKeys;
 
     private final Optional<WindowFrame> windowFrame;
 
     /** constructor of Window*/
-    public WindowExpression(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList) {
+    public WindowExpression(Expression function, List<Expression> partitionKeys, List<OrderExpression> orderKeys) {
         super(new ImmutableList.Builder<Expression>()
                 .add(function)
-                .addAll(partitionKeyList)
-                .addAll(orderKeyList)
+                .addAll(partitionKeys)
+                .addAll(orderKeys)
                 .build().toArray(new Expression[0]));
         this.function = function;
-        this.partitionKeyList = ImmutableList.copyOf(partitionKeyList);
-        this.orderKeyList = ImmutableList.copyOf(orderKeyList);
+        this.partitionKeys = ImmutableList.copyOf(partitionKeys);
+        this.orderKeys = ImmutableList.copyOf(orderKeys);
         this.windowFrame = Optional.empty();
     }
 
     /** constructor of Window*/
-    public WindowExpression(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList,
+    public WindowExpression(Expression function, List<Expression> partitionKeys, List<OrderExpression> orderKeys,
                             WindowFrame windowFrame) {
         super(new ImmutableList.Builder<Expression>()
                 .add(function)
-                .addAll(partitionKeyList)
-                .addAll(orderKeyList)
+                .addAll(partitionKeys)
+                .addAll(orderKeys)
                 .add(windowFrame)
                 .build().toArray(new Expression[0]));
         this.function = function;
-        this.partitionKeyList = ImmutableList.copyOf(partitionKeyList);
-        this.orderKeyList = ImmutableList.copyOf(orderKeyList);
+        this.partitionKeys = ImmutableList.copyOf(partitionKeys);
+        this.orderKeys = ImmutableList.copyOf(orderKeys);
         this.windowFrame = Optional.of(Objects.requireNonNull(windowFrame));
     }
 
@@ -85,19 +85,19 @@ public class WindowExpression extends Expression implements PropagateNullable {
     public List<Expression> getExpressionsInWindowSpec() {
         List<Expression> expressions = Lists.newArrayList();
         expressions.addAll(function.children());
-        expressions.addAll(partitionKeyList);
-        expressions.addAll(orderKeyList.stream()
+        expressions.addAll(partitionKeys);
+        expressions.addAll(orderKeys.stream()
                 .map(orderExpression -> orderExpression.child())
                 .collect(Collectors.toList()));
         return expressions;
     }
 
-    public List<Expression> getPartitionKeyList() {
-        return partitionKeyList;
+    public List<Expression> getPartitionKeys() {
+        return partitionKeys;
     }
 
-    public List<OrderExpression> getOrderKeyList() {
-        return orderKeyList;
+    public List<OrderExpression> getOrderKeys() {
+        return orderKeys;
     }
 
     public Optional<WindowFrame> getWindowFrame() {
@@ -105,14 +105,14 @@ public class WindowExpression extends Expression implements PropagateNullable {
     }
 
     public WindowExpression withWindowFrame(WindowFrame windowFrame) {
-        return new WindowExpression(function, partitionKeyList, orderKeyList, windowFrame);
+        return new WindowExpression(function, partitionKeys, orderKeys, windowFrame);
     }
 
     public WindowExpression withOrderKeyList(List<OrderExpression> orderKeyList) {
         if (windowFrame.isPresent()) {
-            return new WindowExpression(function, partitionKeyList, orderKeyList, windowFrame.get());
+            return new WindowExpression(function, partitionKeys, orderKeyList, windowFrame.get());
         }
-        return new WindowExpression(function, partitionKeyList, orderKeyList);
+        return new WindowExpression(function, partitionKeys, orderKeyList);
     }
 
     @Override
@@ -122,13 +122,13 @@ public class WindowExpression extends Expression implements PropagateNullable {
         Expression func = children.get(index);
         index += 1;
 
-        List<Expression> partitionKeys = children.subList(index, index + partitionKeyList.size());
-        index += partitionKeyList.size();
+        List<Expression> partitionKeys = children.subList(index, index + this.partitionKeys.size());
+        index += this.partitionKeys.size();
 
-        List<OrderExpression> orderKeys = children.subList(index, index + orderKeyList.size()).stream()
+        List<OrderExpression> orderKeys = children.subList(index, index + this.orderKeys.size()).stream()
                 .map(OrderExpression.class::cast)
                 .collect(Collectors.toList());
-        index += orderKeyList.size();
+        index += this.orderKeys.size();
 
         if (index < children.size()) {
             return new WindowExpression(func, partitionKeys, orderKeys, (WindowFrame) children.get(index));
@@ -146,54 +146,50 @@ public class WindowExpression extends Expression implements PropagateNullable {
         }
         WindowExpression window = (WindowExpression) o;
         return Objects.equals(function, window.function)
-            && Objects.equals(partitionKeyList, window.partitionKeyList)
-            && Objects.equals(orderKeyList, window.orderKeyList)
+            && Objects.equals(partitionKeys, window.partitionKeys)
+            && Objects.equals(orderKeys, window.orderKeys)
             && Objects.equals(windowFrame, window.windowFrame);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(function, partitionKeyList, orderKeyList, windowFrame);
+        return Objects.hash(function, partitionKeys, orderKeys, windowFrame);
     }
 
     @Override
     public String toSql() {
         StringBuilder sb = new StringBuilder();
         sb.append(function.toSql() + " OVER(");
-        if (!partitionKeyList.isEmpty()) {
-            sb.append("PARTITION BY ").append(partitionKeyList.stream()
+        if (!partitionKeys.isEmpty()) {
+            sb.append("PARTITION BY ").append(partitionKeys.stream()
                     .map(Expression::toSql)
                     .collect(Collectors.joining(", ", "", " ")));
         }
-        if (!orderKeyList.isEmpty()) {
-            sb.append("ORDER BY ").append(orderKeyList.stream()
+        if (!orderKeys.isEmpty()) {
+            sb.append("ORDER BY ").append(orderKeys.stream()
                     .map(OrderExpression::toSql)
                     .collect(Collectors.joining(", ", "", " ")));
         }
         windowFrame.ifPresent(wf -> sb.append(wf.toSql()));
-        sb.append(")");
-        return sb.toString().trim();
+        return sb.toString().trim() + ")";
     }
 
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append(function + " WindowSpec(");
-        if (!partitionKeyList.isEmpty()) {
-            sb.append("PARTITION BY ").append(partitionKeyList.stream()
+        if (!partitionKeys.isEmpty()) {
+            sb.append("PARTITION BY ").append(partitionKeys.stream()
                     .map(Expression::toString)
                     .collect(Collectors.joining(", ", "", " ")));
         }
-        if (!orderKeyList.isEmpty()) {
-            sb.append("ORDER BY ").append(orderKeyList.stream()
+        if (!orderKeys.isEmpty()) {
+            sb.append("ORDER BY ").append(orderKeys.stream()
                     .map(OrderExpression::toString)
                     .collect(Collectors.joining(", ", "", " ")));
         }
         windowFrame.ifPresent(wf -> sb.append(wf.toSql()));
-        String string = sb.toString();
-        // if windowFrame is not present, maybe an unused string ", " would be in the end of stringBuilder
-        string = string.endsWith(", ") ? string.substring(0, string.length() - 2) : string;
-        return string + ")";
+        return sb.toString().trim() + ")";
     }
 
     @Override

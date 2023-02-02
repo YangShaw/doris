@@ -87,7 +87,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
             Plan root = new LogicalProject<>(outputExpressions, rStudent);
 
             PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                    .applyTopDown(new ExtractWindowExpression())
+                    .applyTopDown(new ExtractAndNormalizeWindowExpression())
                     .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame())
                     .matches(
                             logicalWindow()
@@ -109,7 +109,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
         Plan root = new LogicalWindow<>(outputExpressions, rStudent);
 
         PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                .applyTopDown(new ExtractWindowExpression())
+                .applyTopDown(new ExtractAndNormalizeWindowExpression())
                 .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame())
                 .matches(
                         logicalWindow()
@@ -206,7 +206,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
 
         Exception exception = Assertions.assertThrows(Exception.class, () -> {
             PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                    .applyTopDown(new ExtractWindowExpression())
+                    .applyTopDown(new ExtractAndNormalizeWindowExpression())
                     .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame());
         }, "Not throw expected exception.");
         Assertions.assertTrue(exception.getMessage().contains(errorMsg));

@@ -39,7 +39,7 @@ import java.util.Set;
 /**
  * extract window expressions from LogicalWindow.outputExpressions
  */
-public class ExtractWindowExpression extends OneRewriteRuleFactory implements NormalizeToSlot {
+public class ExtractAndNormalizeWindowExpression extends OneRewriteRuleFactory implements NormalizeToSlot {
 
     @Override
     public Rule build() {
@@ -59,7 +59,8 @@ public class ExtractWindowExpression extends OneRewriteRuleFactory implements No
             // 2. handle window's outputs and windowExprs
             // need to replace exprs with SlotReference in WindowSpec, due to LogicalWindow.getExpressions()
             List<NamedExpression> normalizedOutputs1 = context.normalizeToUseSlotRef(outputs);
-            Set<WindowExpression> normalizedWindows = ExpressionUtils.collect(normalizedOutputs1, WindowExpression.class::isInstance);
+            Set<WindowExpression> normalizedWindows =
+                    ExpressionUtils.collect(normalizedOutputs1, WindowExpression.class::isInstance);
             Set<NamedExpression> normalizedOthers = normalizedOutputs1.stream()
                     .filter(expr -> !expr.anyMatch(WindowExpression.class::isInstance))
                     .collect(ImmutableSet.toImmutableSet());
@@ -81,7 +82,7 @@ public class ExtractWindowExpression extends OneRewriteRuleFactory implements No
                     .buildContext(existedAlias, Sets.newHashSet(outputsWithNormalizedWindow));
             List<NamedExpression> topProjects = ctxForTopProject.normalizeToUseSlotRef(outputsWithNormalizedWindow);
             return new LogicalProject<>(topProjects, normalizedLogicalWindow);
-        }).toRule(RuleType.EXTRACT_WINDOW_EXPRESSIONS);
+        }).toRule(RuleType.EXTRACT_AND_NORMALIZE_WINDOW_EXPRESSIONS);
     }
 
     private Set<Expression> collectExpressionsToBePushedDown(List<NamedExpression> expressions) {

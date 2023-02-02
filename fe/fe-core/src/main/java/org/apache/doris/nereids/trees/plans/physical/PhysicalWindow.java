@@ -17,7 +17,6 @@
 
 package org.apache.doris.nereids.trees.plans.physical;
 
-import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.properties.PhysicalProperties;
@@ -34,6 +33,7 @@ import org.apache.doris.nereids.util.Utils;
 import org.apache.doris.statistics.StatsDeriveResult;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 import java.util.Objects;
@@ -64,8 +64,7 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
                 + "in PhysicalWindow cannot be null"));
         this.windowFrameGroup = Objects.requireNonNull(windowFrameGroup, "windowFrameGroup in PhysicalWindow"
                 + "cannot be null");
-        this.requireProperties = Objects.requireNonNull(requireProperties, "requireProperties in PhysicalWindow"
-                + "cannot be null");
+        this.requireProperties = requireProperties;
     }
 
     /** constructor for PhysicalWindow */
@@ -80,8 +79,7 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
             + "in PhysicalWindow cannot be null"));
         this.windowFrameGroup = Objects.requireNonNull(windowFrameGroup, "windowFrameGroup in PhysicalWindow"
             + "cannot be null");
-        this.requireProperties = Objects.requireNonNull(requireProperties, "requireProperties in PhysicalWindow"
-            + "cannot be null");
+        this.requireProperties = requireProperties;
     }
 
     @Override

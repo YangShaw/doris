@@ -75,7 +75,9 @@ public class OrderKey {
 
     @Override
     public String toString() {
-        return expr.toString() + (isAsc ? " asc" : " desc") + (isNullFirst() ? " null first" : "");
+        // for test
+        return expr.toString();
+        // return expr.toString() + (isAsc ? " asc" : " desc") + (nullFirst ? " null first" : "");
     }
 
     @Override

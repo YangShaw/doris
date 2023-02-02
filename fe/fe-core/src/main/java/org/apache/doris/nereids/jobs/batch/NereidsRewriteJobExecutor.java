@@ -40,9 +40,9 @@ import org.apache.doris.nereids.rules.rewrite.logical.EliminateGroupByConstant;
 import org.apache.doris.nereids.rules.rewrite.logical.EliminateLimit;
 import org.apache.doris.nereids.rules.rewrite.logical.EliminateOrderByConstant;
 import org.apache.doris.nereids.rules.rewrite.logical.EliminateUnnecessaryProject;
+import org.apache.doris.nereids.rules.rewrite.logical.ExtractAndNormalizeWindowExpression;
 import org.apache.doris.nereids.rules.rewrite.logical.ExtractFilterFromCrossJoin;
 import org.apache.doris.nereids.rules.rewrite.logical.ExtractSingleTableExpressionFromDisjunction;
-import org.apache.doris.nereids.rules.rewrite.logical.ExtractWindowExpression;
 import org.apache.doris.nereids.rules.rewrite.logical.FindHashConditionForJoin;
 import org.apache.doris.nereids.rules.rewrite.logical.InferPredicates;
 import org.apache.doris.nereids.rules.rewrite.logical.InnerToCrossJoin;
@@ -91,7 +91,7 @@ public class NereidsRewriteJobExecutor extends BatchRulesJob {
                 .add(topDownBatch(ImmutableList.of(new ExtractSingleTableExpressionFromDisjunction())))
                 .add(topDownBatch(ImmutableList.of(new EliminateGroupByConstant())))
                 .add(topDownBatch(ImmutableList.of(new NormalizeAggregate())))
-                .add(topDownBatch(ImmutableList.of(new ExtractWindowExpression())))
+                .add(topDownBatch(ImmutableList.of(new ExtractAndNormalizeWindowExpression())))
                 .add(topDownBatch(ImmutableList.of(new CheckAndStandardizeWindowFunctionAndFrame())))
                 .add(topDownBatch(RuleSet.PUSH_DOWN_FILTERS, false))
                 .add(visitorJob(RuleType.INFER_PREDICATES, new InferPredicates()))

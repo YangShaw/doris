@@ -125,7 +125,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      */
     private void checkWindowFrameBeforeFunc(WindowFrame windowFrame) {
         // case 0
-        if (windowExpression.getOrderKeyList().isEmpty()) {
+        if (windowExpression.getOrderKeys().isEmpty()) {
             throw new AnalysisException("WindowFrame clause requires OrderBy clause");
         }
 
@@ -318,7 +318,8 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
 
             if (wf.getLeftBoundary().is(FrameBoundType.UNBOUNDED_PRECEDING)
                     && wf.getRightBoundary().isNot(FrameBoundType.PRECEDING)) {
-                windowExpression = windowExpression.withWindowFrame(wf.withRightBoundary(FrameBoundary.newCurrentRowBoundary()));
+                windowExpression = windowExpression.withWindowFrame(
+                        wf.withRightBoundary(FrameBoundary.newCurrentRowBoundary()));
             }
         } else {
             windowExpression = windowExpression.withWindowFrame(new WindowFrame(FrameUnitsType.ROWS,
@@ -387,7 +388,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
                 && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
             // reverse OrderKey's asc and isNullFirst;
             // in checkWindowFrameBeforeFunc(), we have confirmed that orderKeyLists must exist
-            List<OrderExpression> newOKList = windowExpression.getOrderKeyList().stream()
+            List<OrderExpression> newOKList = windowExpression.getOrderKeys().stream()
                     .map(orderExpression -> {
                         OrderKey orderKey = orderExpression.getOrderKey();
                         return new OrderExpression(
@@ -403,7 +404,8 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
             // reverse WindowFunction, which is used only for first_value() and last_value()
             Expression windowFunction = windowExpression.getFunction();
             if (windowFunction instanceof FirstOrLastValue) {
-                windowExpression = windowExpression.withChildren(ImmutableList.of(((FirstOrLastValue) windowFunction).reverse()));
+                windowExpression = windowExpression.withChildren(
+                        ImmutableList.of(((FirstOrLastValue) windowFunction).reverse()));
             }
         }
     }
