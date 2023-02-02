@@ -20,24 +20,85 @@ package org.apache.doris.nereids.rules.rewrite.logical;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.OneRewriteRuleFactory;
+import org.apache.doris.nereids.trees.expressions.Alias;
+import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.plans.Plan;
+import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
+import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
+import org.apache.doris.nereids.util.ExpressionUtils;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 /**
  * extract window expressions from LogicalWindow.outputExpressions
  */
-public class ExtractWindowExpression extends OneRewriteRuleFactory {
+public class ExtractWindowExpression extends OneRewriteRuleFactory implements NormalizeToSlot {
 
     @Override
     public Rule build() {
-        return logicalWindow().when(window -> window.getWindowExpressions() == null).then(window -> {
-            List<NamedExpression> windowExpressions = window.getOutputExpressions().stream()
-                    .filter(expr -> expr.anyMatch(Window.class::isInstance))
-                    .collect(Collectors.toList());
-            return window.withWindowExpressions(windowExpressions);
+        return logicalProject().when(project -> containsWindowExpression(project.getProjects())).then(project -> {
+            List<NamedExpression> outputs = project.getProjects();
+
+            // 1. handle bottom projects
+            Set<Alias> existedAlias = ExpressionUtils.collect(outputs, Alias.class::isInstance);
+            Set<Expression> toBePushedDown = collectExpressionsToBePushedDown(outputs);
+            NormalizeToSlotContext context = NormalizeToSlotContext.buildContext(existedAlias, toBePushedDown);
+            // set toBePushedDown exprs as NamedExpression, e.g. (a+1) -> Alias(a+1)
+            Set<NamedExpression> bottomProjects = context.pushDownToNamedExpression(toBePushedDown);
+            Plan normalizedChild = bottomProjects.isEmpty()
+                    ? project.child()
+                    : new LogicalProject<>(ImmutableList.copyOf(bottomProjects), project.child());
+
+            // 2. handle window's outputs and windowExprs
+            // need to replace exprs with SlotReference in WindowSpec, due to LogicalWindow.getExpressions()
+            List<NamedExpression> normalizedOutputs1 = context.normalizeToUseSlotRef(outputs);
+            Set<Window> normalizedWindows = ExpressionUtils.collect(normalizedOutputs1, Window.class::isInstance);
+            Set<NamedExpression> normalizedOthers = normalizedOutputs1.stream()
+                    .filter(expr -> !expr.anyMatch(Window.class::isInstance))
+                    .collect(ImmutableSet.toImmutableSet());
+
+            existedAlias = ExpressionUtils.collect(normalizedOutputs1, Alias.class::isInstance);
+            NormalizeToSlotContext ctxForWindows = NormalizeToSlotContext.buildContext(
+                    existedAlias, Sets.newHashSet(normalizedWindows));
+
+            Set<NamedExpression> normalizedWindowWithAlias = ctxForWindows.pushDownToNamedExpression(normalizedWindows);
+            List<NamedExpression> outputsWithNormalizedWindow = ImmutableList.<NamedExpression>builder()
+                    .addAll(normalizedOthers)
+                    .addAll(normalizedWindowWithAlias)
+                    .build();
+            LogicalWindow normalizedLogicalWindow = new LogicalWindow(outputsWithNormalizedWindow, normalizedChild);
+
+            // 3. handle top projects
+            existedAlias = ExpressionUtils.collect(outputsWithNormalizedWindow, Alias.class::isInstance);
+            NormalizeToSlotContext ctxForTopProject = NormalizeToSlotContext
+                    .buildContext(existedAlias, Sets.newHashSet(outputsWithNormalizedWindow));
+            List<NamedExpression> topProjects = ctxForTopProject.normalizeToUseSlotRef(outputsWithNormalizedWindow);
+            return new LogicalProject<>(topProjects, normalizedLogicalWindow);
         }).toRule(RuleType.EXTRACT_WINDOW_EXPRESSIONS);
+    }
+
+    private Set<Expression> collectExpressionsToBePushedDown(List<NamedExpression> expressions) {
+        // bottomProjects includes:
+        // 1. expressions from function and WindowSpec's partitionKeys and orderKeys
+        // 2. other slots of outputExpressions
+        return expressions.stream()
+            .flatMap(expression -> {
+                if (expression.anyMatch(Window.class::isInstance)) {
+                    return ((Window) expression.child(0)).getExpressionsInWindowSpec().stream();
+                }
+                return ImmutableList.of(expression).stream();
+            })
+            .collect(ImmutableSet.toImmutableSet());
+    }
+
+    private boolean containsWindowExpression(List<NamedExpression> expressions) {
+        return expressions.stream().anyMatch(expr -> expr.anyMatch(Window.class::isInstance));
     }
 }

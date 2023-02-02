@@ -41,7 +41,6 @@ import org.apache.doris.nereids.DorisParser.DecimalLiteralContext;
 import org.apache.doris.nereids.DorisParser.DereferenceContext;
 import org.apache.doris.nereids.DorisParser.ExistContext;
 import org.apache.doris.nereids.DorisParser.ExplainContext;
-import org.apache.doris.nereids.DorisParser.FrameBoundContext;
 import org.apache.doris.nereids.DorisParser.FromClauseContext;
 import org.apache.doris.nereids.DorisParser.GroupingElementContext;
 import org.apache.doris.nereids.DorisParser.GroupingSetContext;
@@ -220,7 +219,6 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalSelectHint;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSubQueryAlias;
 import org.apache.doris.nereids.trees.plans.logical.LogicalUnion;
-import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 import org.apache.doris.nereids.trees.plans.logical.RelationUtil;
 import org.apache.doris.nereids.trees.plans.logical.UsingJoin;
 import org.apache.doris.nereids.types.DataType;
@@ -255,6 +253,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * Build a logical plan tree with unbounded nodes.
@@ -979,24 +978,29 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
      * deal with window function definition
      */
     private Window withWindowSpec(WindowSpecContext ctx, Expression function) {
-        Optional<List<Expression>> partitionKeys = optionalVisit(ctx.partitionClause(),
-                () -> visit(ctx.partitionClause().expression(), Expression.class));
+        List<Expression> partitionKeyList = Lists.newArrayList();
+        if (ctx.partitionClause() != null) {
+            partitionKeyList = visit(ctx.partitionClause().expression(), Expression.class);
+        }
 
-        Optional<List<OrderKey>> orderKeys = optionalVisit(ctx.sortClause(),
-                () -> visit(ctx.sortClause().sortItem(), OrderKey.class));
+        List<OrderExpression> orderKeyList = Lists.newArrayList();
+        if (ctx.sortClause() != null) {
+            orderKeyList = visit(ctx.sortClause().sortItem(), OrderKey.class).stream()
+                .map(orderKey -> new OrderExpression(orderKey))
+                .collect(Collectors.toList());
+        }
 
-        Optional<WindowFrame> windowFrame = optionalVisit(ctx.windowFrame(),
-                () -> withWindowFrame(ctx.windowFrame()));
-
-        return new Window(function, partitionKeys, orderKeys, windowFrame);
+        if (ctx.windowFrame() != null) {
+            return new Window(function, partitionKeyList, orderKeyList, withWindowFrame(ctx.windowFrame()));
+        }
+        return new Window(function, partitionKeyList, orderKeyList);
     }
 
     /**
      * deal with optional expressions
      */
-    private <T, C> Optional optionalVisit(T ctx, Supplier<C> func) {
-        return Optional.ofNullable(ctx).map(a -> Optional.of(func.get()))
-                .orElse(Optional.empty());
+    private <T, C> Optional<C> optionalVisit(T ctx, Supplier<C> func) {
+        return Optional.ofNullable(ctx).map(a -> func.get());
     }
 
     /**
@@ -1013,7 +1017,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
         return new WindowFrame(frameUnitsType, leftBoundary);
     }
 
-    private FrameBoundary withFrameBound(FrameBoundContext ctx) {
+    private FrameBoundary withFrameBound(DorisParser.FrameBoundaryContext ctx) {
         Optional<Expression> expression = Optional.empty();
         if (ctx.expression() != null) {
             expression = Optional.of(getExpression(ctx.expression()));
@@ -1531,17 +1535,10 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                             expressions, input, isDistinct);
                 } else {
                     List<NamedExpression> projects = getNamedExpressions(selectCtx.namedExpressionSeq());
-                    if (containsWindowExpressions(projects)) {
-                        return new LogicalWindow<>(projects, input);
-                    }
                     return new LogicalProject<>(projects, Collections.emptyList(), input, isDistinct);
                 }
             }
         });
-    }
-
-    private boolean containsWindowExpressions(List<NamedExpression> expressions) {
-        return expressions.stream().anyMatch(expr -> expr.anyMatch(Window.class::isInstance));
     }
 
     private LogicalPlan withFilter(LogicalPlan input, Optional<WhereClauseContext> whereCtx) {

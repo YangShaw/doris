@@ -60,6 +60,7 @@ import org.apache.doris.nereids.trees.expressions.EqualTo;
 import org.apache.doris.nereids.trees.expressions.ExprId;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
+import org.apache.doris.nereids.trees.expressions.OrderExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
@@ -84,6 +85,7 @@ import org.apache.doris.nereids.trees.plans.physical.PhysicalHashAggregate;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalHashJoin;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalIntersect;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalLimit;
+import org.apache.doris.nereids.trees.plans.physical.PhysicalLocalQuickSort;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalNestedLoopJoin;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalOlapScan;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalOneRowRelation;
@@ -627,7 +629,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // variable in Nereids
         WindowFrameGroup windowFrameGroup = physicalWindow.getWindowFrameGroup();
         List<Expression> partitionKeyList = windowFrameGroup.getPartitionKeyList();
-        List<OrderKey> orderKeyList = windowFrameGroup.getOrderKeyList();
+        List<OrderExpression> orderKeyList = windowFrameGroup.getOrderKeyList();
         List<NamedExpression> windowFunctionList = windowFrameGroup.getGroupList();
 
         // partition by clause
@@ -638,7 +640,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // order by clause
         List<OrderByElement> orderByElements = orderKeyList.stream()
                 .map(orderKey -> new OrderByElement(
-                        ExpressionTranslator.translate(orderKey.getExpr(), context),
+                        ExpressionTranslator.translate(orderKey.child(), context),
                         orderKey.isAsc(), orderKey.isNullFirst()))
                 .collect(Collectors.toList());
 
@@ -673,7 +675,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                 windowFrameGroup.getPartitionKeyList(), partitionExprs, bufferedSlotRefForWindow);
 
         Expr orderElementsIsNullableMatched = orderByElements.isEmpty() ? null : windowExprsHaveMatchedNullable(
-                windowFrameGroup.getOrderKeyList().stream().map(order -> order.getExpr()).collect(Collectors.toList()),
+                windowFrameGroup.getOrderKeyList().stream().map(order -> order.child()).collect(Collectors.toList()),
                 orderByElements.stream().map(order -> order.getExpr()).collect(Collectors.toList()),
                 bufferedSlotRefForWindow);
 
@@ -731,9 +733,8 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
     }
 
     @Override
-    public PlanFragment visitAbstractPhysicalSort(
-            AbstractPhysicalSort<? extends Plan> sort,
-            PlanTranslatorContext context) {
+    public PlanFragment visitPhysicalLocalQuickSort(PhysicalLocalQuickSort<? extends Plan> sort,
+                                                    PlanTranslatorContext context) {
         PlanFragment childFragment = sort.child(0).accept(this, context);
         List<Expr> oldOrderingExprList = Lists.newArrayList();
         List<Boolean> ascOrderList = Lists.newArrayList();
@@ -786,6 +787,46 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         }
         currentFragment.addPlanRoot(sortNode);
         return currentFragment;
+    }
+
+    @Override
+    public PlanFragment visitAbstractPhysicalSort(
+            AbstractPhysicalSort<? extends Plan> sort,
+            PlanTranslatorContext context) {
+        PlanFragment childFragment = sort.child(0).accept(this, context);
+        List<Expr> oldOrderingExprList = Lists.newArrayList();
+        List<Boolean> ascOrderList = Lists.newArrayList();
+        List<Boolean> nullsFirstParamList = Lists.newArrayList();
+        List<OrderKey> orderKeyList = sort.getOrderKeys();
+        // 1. Get previous slotRef
+        orderKeyList.forEach(k -> {
+            oldOrderingExprList.add(ExpressionTranslator.translate(k.getExpr(), context));
+            ascOrderList.add(k.isAsc());
+            nullsFirstParamList.add(k.isNullFirst());
+        });
+        List<Expr> sortTupleOutputList = new ArrayList<>();
+        List<Slot> outputList = sort.getOutput();
+        outputList.forEach(k -> {
+            sortTupleOutputList.add(ExpressionTranslator.translate(k, context));
+        });
+
+        // 2. Generate new Tuple
+        TupleDescriptor tupleDesc = generateTupleDesc(outputList, orderKeyList, context, null);
+        // 3. Get current slotRef
+        List<Expr> newOrderingExprList = Lists.newArrayList();
+        orderKeyList.forEach(k -> {
+            newOrderingExprList.add(ExpressionTranslator.translate(k.getExpr(), context));
+        });
+        // 4. fill in SortInfo members
+        SortInfo sortInfo = new SortInfo(newOrderingExprList, ascOrderList, nullsFirstParamList, tupleDesc);
+        PlanNode childNode = childFragment.getPlanRoot();
+        SortNode sortNode = new SortNode(context.nextPlanNodeId(), childNode, sortInfo, true);
+        sortNode.finalizeForNereids(tupleDesc, sortTupleOutputList, oldOrderingExprList);
+        if (sort.getStats() != null) {
+            sortNode.setCardinality((long) sort.getStats().getRowCount());
+        }
+        childFragment.addPlanRoot(sortNode);
+        return childFragment;
     }
 
     /**
@@ -1865,7 +1906,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
                         bufferedSlotRefForWindow.put(exprId, context.findSlotRef(exprId));
                     });
             windowFrameGroup.getOrderKeyList().stream()
-                    .map(ok -> ok.getExpr())
+                    .map(ok -> ok.child())
                     .map(NamedExpression.class::cast)
                     .forEach(expression -> {
                         ExprId exprId = expression.getExprId();

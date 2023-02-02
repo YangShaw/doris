@@ -28,9 +28,9 @@ import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.logical.CheckAndStandardizeWindowFunctionAndFrame;
 import org.apache.doris.nereids.rules.rewrite.logical.ExtractWindowExpression;
-import org.apache.doris.nereids.rules.rewrite.logical.NormalizeWindow;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
+import org.apache.doris.nereids.trees.expressions.OrderExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
@@ -58,7 +58,6 @@ import java.util.stream.Collectors;
  *  and (PartitionKey + OrderKey) for OrderSpec.
  */
 @DependsRules({
-    NormalizeWindow.class,
     CheckAndStandardizeWindowFunctionAndFrame.class,
     ExtractWindowExpression.class
 })
@@ -68,8 +67,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     public Rule build() {
 
         return RuleType.LOGICAL_WINDOW_TO_PHYSICAL_WINDOW_RULE.build(
-            logicalWindow().when(LogicalWindow::isNormalized)
-                .when(LogicalWindow::isChecked)
+            logicalWindow().when(LogicalWindow::isChecked)
                 .thenApply(ctx -> resolveWindow(ctx.cascadesContext, ctx.root))
         );
     }
@@ -80,7 +78,9 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     private PhysicalWindow resolveWindow(CascadesContext ctx, LogicalWindow<GroupPlan> logicalWindow) {
         // todo: remove windowExpressions from LogicalWindow and rule ExtractWindowExpressions.
         //  Only add this variable in PhysicalWindow
-        List<NamedExpression> windowList = logicalWindow.getWindowExpressions();
+        List<NamedExpression> windowList = logicalWindow.getOutputExpressions().stream()
+                .filter(expr -> expr.anyMatch(Window.class::isInstance))
+                .collect(Collectors.toList());
 
         /////////// create three kinds of groups and compute tupleSize of each
         // windowFrameGroup
@@ -145,7 +145,10 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         }
 
         if (!orderKeyGroup.orderKeyList.isEmpty()) {
-            keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeyList);
+            keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeyList.stream()
+                    .map(orderExpression -> orderExpression.getOrderKey())
+                    .collect(Collectors.toList())
+            );
         }
         return keysNeedToBeSortedList;
     }
@@ -158,7 +161,6 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         // Order: requiredOrderKeys
         PhysicalWindow physicalWindow = new PhysicalWindow<>(
                 logicalWindow.getOutputExpressions(),
-                logicalWindow.getWindowExpressions(),
                 windowFrameGroup,
                 logicalWindow.getLogicalProperties(),
                 root);
@@ -365,14 +367,14 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     public static class WindowFrameGroup extends WindowFunctionRelatedGroup<NamedExpression> {
 
         private final List<Expression> partitionKeyList;
-        private final List<OrderKey> orderKeyList;
+        private final List<OrderExpression> orderKeyList;
         private final WindowFrame windowFrame;
 
         public WindowFrameGroup(NamedExpression windowAlias) {
             Window window = (Window) (windowAlias.child(0));
-            partitionKeyList = window.getPartitionKeyList().orElse(Lists.newArrayList());
-            orderKeyList = window.getOrderKeyList().orElse(Lists.newArrayList());
-            windowFrame = window.getWindowFrame().orElse(null);
+            partitionKeyList = window.getPartitionKeyList();
+            orderKeyList = window.getOrderKeyList();
+            windowFrame = window.getWindowFrame().get();
             groupList.add(windowAlias);
         }
 
@@ -387,9 +389,9 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             // but not in OrderKey' comparison.
             Window window = (Window) (windowAlias.child(0));
 
-            List<Expression> otherPartitionKeyList = window.getPartitionKeyList().orElse(null);
-            List<OrderKey> otherOrderKeyList = window.getOrderKeyList().orElse(null);
-            WindowFrame otherWindowFrame = window.getWindowFrame().orElse(null);
+            List<Expression> otherPartitionKeyList = window.getPartitionKeyList();
+            List<OrderExpression> otherOrderKeyList = window.getOrderKeyList();
+            WindowFrame otherWindowFrame = window.getWindowFrame().get();
 
             // for PartitionKeys, we don't care about the order of each key, so we use isEqualCollection() to compare
             // whether these two lists have same keys; but for OrderKeys, the order of each key also make sense, so
@@ -412,7 +414,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
                     .collect(Collectors.joining(", ", "", ", ")));
 
             sb.append("OrderKeys: ").append(orderKeyList.stream()
-                    .map(OrderKey::toString)
+                    .map(OrderExpression::toString)
                     .collect(Collectors.joining(", ", "", ", ")));
 
             sb.append("WindowFrame: ").append(windowFrame);
@@ -423,7 +425,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             return partitionKeyList;
         }
 
-        public List<OrderKey> getOrderKeyList() {
+        public List<OrderExpression> getOrderKeyList() {
             return orderKeyList;
         }
 
@@ -439,7 +441,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
     private static class OrderKeyGroup extends WindowFunctionRelatedGroup<WindowFrameGroup> {
 
         private final List<Expression> partitionKeyList;
-        private final List<OrderKey> orderKeyList;
+        private final List<OrderExpression> orderKeyList;
 
         public OrderKeyGroup(WindowFrameGroup windowFrameGroup) {
             partitionKeyList = windowFrameGroup.partitionKeyList;

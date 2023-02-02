@@ -20,6 +20,7 @@ package org.apache.doris.nereids.rules.analysis;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.Expression;
+import org.apache.doris.nereids.trees.expressions.OrderExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
@@ -124,7 +125,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
      */
     private void checkWindowFrameBeforeFunc(WindowFrame windowFrame) {
         // case 0
-        if (!window.getOrderKeyList().isPresent()) {
+        if (window.getOrderKeyList().isEmpty()) {
             throw new AnalysisException("WindowFrame clause requires OrderBy clause");
         }
 
@@ -388,8 +389,12 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
                 && wf.getLeftBoundary().isNot(FrameBoundType.UNBOUNDED_PRECEDING)) {
             // reverse OrderKey's asc and isNullFirst;
             // in checkWindowFrameBeforeFunc(), we have confirmed that orderKeyLists must exist
-            List<OrderKey> newOKList = window.getOrderKeyList().get().stream()
-                    .map(orderKey -> new OrderKey(orderKey.getExpr(), !orderKey.isAsc(), !orderKey.isNullFirst()))
+            List<OrderExpression> newOKList = window.getOrderKeyList().stream()
+                    .map(orderExpression -> {
+                        OrderKey orderKey = orderExpression.getOrderKey();
+                        return new OrderExpression(
+                                new OrderKey(orderKey.getExpr(), !orderKey.isAsc(), !orderKey.isNullFirst()));
+                    })
                     .collect(Collectors.toList());
             window = window.withOrderKeyList(newOKList);
 
@@ -398,7 +403,7 @@ public class WindowFunctionChecker extends DefaultExpressionVisitor<Expression, 
             window = window.withWindowFrame(wf.reverseWindow());
 
             // reverse WindowFunction, which is used only for first_value() and last_value()
-            Expression windowFunction = window.getWindowFunction();
+            Expression windowFunction = window.getFunction();
             if (windowFunction instanceof FirstOrLastValue) {
                 window = window.withChildren(ImmutableList.of(((FirstOrLastValue) windowFunction).reverse()));
             }

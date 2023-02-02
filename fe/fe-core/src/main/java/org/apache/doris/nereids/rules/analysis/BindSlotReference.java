@@ -36,7 +36,6 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
-import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.functions.Function;
 import org.apache.doris.nereids.trees.expressions.visitor.DefaultExpressionRewriter;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
@@ -58,7 +57,6 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalRepeat;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSetOperation;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
-import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 import org.apache.doris.nereids.trees.plans.logical.UsingJoin;
 
 import com.google.common.base.Preconditions;
@@ -480,54 +478,8 @@ public class BindSlotReference implements AnalysisRuleFactory {
                 logicalPlan()
                     .when(plan -> plan.canBind() && !(plan instanceof LeafPlan))
                     .then(LogicalPlan::recomputeLogicalProperties)
-            ),
-            RuleType.BINDING_WINDOW_SLOT.build(
-                logicalWindow().when(Plan::canBind).thenApply(ctx -> {
-                    LogicalWindow<GroupPlan> window = ctx.root;
-                    return bindExpressionsInLogicalWindow(window, ctx.cascadesContext);
-                })
             )
         );
-    }
-
-    private Plan bindExpressionsInLogicalWindow(LogicalWindow<? extends Plan> logicalWindow,
-                                                CascadesContext cascadesContext) {
-        List<Plan> inputs = logicalWindow.children();
-        List<NamedExpression> outputExpressions = logicalWindow.getOutputExpressions().stream().map(expression -> {
-            if (expression.anyMatch(Window.class::isInstance)) {
-                Window window = (Window) (expression.child(0));
-                Optional<List<Expression>> newPKList;
-                // bind expressions in partitionKeys and orderKey
-                // todo: expressions in WindowFrame should be bound after being supported, like
-                //  ROWS BETWEEN 3+2 preceding AND current row
-                if (window.getPartitionKeyList().isPresent()) {
-                    newPKList = Optional.of(window.getPartitionKeyList().get().stream()
-                         .map(expr -> bind(expr, inputs, cascadesContext))
-                         .collect(Collectors.toList()));
-                } else {
-                    newPKList = Optional.empty();
-                }
-
-                Optional<List<OrderKey>> newOKList;
-                if (window.getOrderKeyList().isPresent()) {
-                    newOKList = Optional.of(window.getOrderKeyList().get().stream()
-                        .map(orderKey -> {
-                            Expression item = bind(orderKey.getExpr(), inputs, cascadesContext);
-                            return new OrderKey(item, orderKey.isAsc(), orderKey.isNullFirst());
-                        })
-                        .collect(Collectors.toList()));
-                } else {
-                    newOKList = Optional.empty();
-                }
-                return bind((NamedExpression) expression.withChildren(
-                    new Window(window.child(), newPKList, newOKList, window.getWindowFrame())),
-                    inputs, cascadesContext);
-            }
-            return bind(expression, inputs, cascadesContext);
-        }).collect(Collectors.toList());
-        // todo: boundExceptions?
-        outputExpressions = flatBoundStar(outputExpressions, ImmutableList.of());
-        return new LogicalWindow<>(outputExpressions, logicalWindow.child(0));
     }
 
     private Plan bindSort(LogicalSort<? extends Plan> sort, Plan plan, CascadesContext ctx) {

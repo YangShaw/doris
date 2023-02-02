@@ -22,6 +22,7 @@ import org.apache.doris.nereids.trees.expressions.Add;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
+import org.apache.doris.nereids.trees.expressions.OrderExpression;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
@@ -29,7 +30,7 @@ import org.apache.doris.nereids.trees.expressions.literal.IntegerLiteral;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOlapScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
-import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
+import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.RelationUtil;
 import org.apache.doris.nereids.util.MemoTestUtils;
 import org.apache.doris.nereids.util.PatternMatchSupported;
@@ -43,7 +44,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import java.util.List;
-import java.util.Optional;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class NormalizeWindowTest implements PatternMatchSupported {
@@ -62,15 +62,16 @@ public class NormalizeWindowTest implements PatternMatchSupported {
         NamedExpression age = rStudent.getOutput().get(3).toSlot();
 
         List<Expression> partitionKeyList = ImmutableList.of(gender);
-        List<OrderKey> orderKeyList = ImmutableList.of(new OrderKey(age, true, true));
-        Window window = new Window(new Rank(), Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.empty());
+        List<OrderExpression> orderKeyList = ImmutableList.of(new OrderExpression(
+                new OrderKey(age, true, true)));
+        Window window = new Window(new Rank(), partitionKeyList, orderKeyList);
         Alias windowAlias = new Alias(window, window.toSql());
 
         List<NamedExpression> outputExpressions = Lists.newArrayList(id, windowAlias);
-        Plan root = new LogicalWindow<>(outputExpressions, rStudent);
+        Plan root = new LogicalProject<>(outputExpressions, rStudent);
 
         PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                .applyTopDown(new NormalizeWindow())
+                .applyTopDown(new ExtractWindowExpression())
                 .matchesFromRoot(
                         logicalProject(
                                 logicalWindow(
@@ -78,14 +79,13 @@ public class NormalizeWindowTest implements PatternMatchSupported {
                                                 logicalOlapScan()
                                         ).when(project -> {
                                             List<NamedExpression> projects = project.getProjects();
-                                            return projects.get(0).equals(gender)
-                                                && projects.get(1).equals(age)
-                                                && projects.get(2).equals(id);
+                                            return projects.get(0).equals(id)
+                                                && projects.get(1).equals(gender)
+                                                && projects.get(2).equals(age);
                                         })
                                 ).when(logicalWindow -> {
                                     List<NamedExpression> outputs = logicalWindow.getOutputExpressions();
-                                    return logicalWindow.isNormalized()
-                                        && outputs.get(0).equals(id)
+                                    return outputs.get(0).equals(id)
                                         && outputs.get(1).equals(windowAlias);
                                 })
                         ).when(project -> {
@@ -113,15 +113,16 @@ public class NormalizeWindowTest implements PatternMatchSupported {
         NamedExpression age = rStudent.getOutput().get(3).toSlot();
 
         List<Expression> partitionKeyList = ImmutableList.of(new Add(id, new IntegerLiteral(2)));
-        List<OrderKey> orderKeyList = ImmutableList.of(new OrderKey(new Add(age, new IntegerLiteral(2)), true, true));
-        Window window = new Window(new Rank(), Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.empty());
+        List<OrderExpression> orderKeyList = ImmutableList.of(new OrderExpression(
+                new OrderKey(new Add(age, new IntegerLiteral(2)), true, true)));
+        Window window = new Window(new Rank(), partitionKeyList, orderKeyList);
         Alias windowAlias = new Alias(window, window.toSql());
 
         List<NamedExpression> outputExpressions = Lists.newArrayList(id, windowAlias);
-        Plan root = new LogicalWindow<>(outputExpressions, rStudent);
+        Plan root = new LogicalProject<>(outputExpressions, rStudent);
 
         PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                .applyTopDown(new NormalizeWindow())
+                .applyTopDown(new ExtractWindowExpression())
                 .matchesFromRoot(
                         logicalProject(
                                 logicalWindow(
@@ -129,21 +130,20 @@ public class NormalizeWindowTest implements PatternMatchSupported {
                                                 logicalOlapScan()
                                         ).when(project -> {
                                             List<NamedExpression> projects = project.getProjects();
-                                            return projects.get(0) instanceof Alias && projects.get(0).child(0).child(0).equals(id)
-                                                && projects.get(0).child(0).child(1).equals(new IntegerLiteral(2))
-                                                && projects.get(1) instanceof Alias && projects.get(1).child(0).child(0).equals(age)
+                                            return projects.get(1) instanceof Alias && projects.get(1).child(0).child(0).equals(id)
                                                 && projects.get(1).child(0).child(1).equals(new IntegerLiteral(2))
-                                                && projects.get(2).equals(id);
+                                                && projects.get(2) instanceof Alias && projects.get(2).child(0).child(0).equals(age)
+                                                && projects.get(2).child(0).child(1).equals(new IntegerLiteral(2))
+                                                && projects.get(0).equals(id);
                                         })
                                 ).when(logicalWindow -> {
                                     List<NamedExpression> outputs = logicalWindow.getOutputExpressions();
                                     Window newWindow = (Window) outputs.get(1).child(0);
-                                    Expression pk = newWindow.getPartitionKeyList().get().get(0);
-                                    OrderKey ok = newWindow.getOrderKeyList().get().get(0);
-                                    return logicalWindow.isNormalized()
-                                        && !newWindow.equals(windowAlias.child(0))
+                                    Expression pk = newWindow.getPartitionKeyList().get(0);
+                                    OrderExpression ok = newWindow.getOrderKeyList().get(0);
+                                    return !newWindow.equals(windowAlias.child(0))
                                         && pk instanceof SlotReference
-                                        && ok.getExpr() instanceof SlotReference;
+                                        && ok.child() instanceof SlotReference;
                                 })
                         ).when(project -> {
                             List<NamedExpression> projects = project.getProjects();

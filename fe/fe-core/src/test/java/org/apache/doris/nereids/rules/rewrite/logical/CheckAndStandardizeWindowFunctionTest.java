@@ -21,6 +21,7 @@ import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
+import org.apache.doris.nereids.trees.expressions.OrderExpression;
 import org.apache.doris.nereids.trees.expressions.Window;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
@@ -34,6 +35,7 @@ import org.apache.doris.nereids.trees.expressions.literal.IntegerLiteral;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOlapScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
+import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 import org.apache.doris.nereids.trees.plans.logical.RelationUtil;
 import org.apache.doris.nereids.util.MemoTestUtils;
@@ -49,7 +51,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import java.util.List;
-import java.util.Optional;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSupported {
@@ -58,7 +59,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
     private NamedExpression gender;
     private NamedExpression age;
     private List<Expression> partitionKeyList;
-    private List<OrderKey> orderKeyList;
+    private List<OrderExpression> orderKeyList;
     private WindowFrame defaultWindowFrame;
 
     @BeforeAll
@@ -68,7 +69,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
         gender = rStudent.getOutput().get(1).toSlot();
         age = rStudent.getOutput().get(3).toSlot();
         partitionKeyList = ImmutableList.of(gender);
-        orderKeyList = ImmutableList.of(new OrderKey(age, true, true));
+        orderKeyList = ImmutableList.of(new OrderExpression(new OrderKey(age, true, true)));
         defaultWindowFrame = new WindowFrame(FrameUnitsType.RANGE,
             FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
     }
@@ -80,13 +81,13 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
         List<WindowFunction> funcList = Lists.newArrayList(new Rank(), new DenseRank());
 
         for (WindowFunction func : funcList) {
-            Window window = new Window(func, Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.empty());
+            Window window = new Window(func, partitionKeyList, orderKeyList);
             Alias windowAlias = new Alias(window, window.toSql());
             List<NamedExpression> outputExpressions = Lists.newArrayList(windowAlias);
-            Plan root = new LogicalWindow<>(outputExpressions, rStudent);
+            Plan root = new LogicalProject<>(outputExpressions, rStudent);
 
             PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                    .applyTopDown(new NormalizeWindow())
+                    .applyTopDown(new ExtractWindowExpression())
                     .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame())
                     .matches(
                             logicalWindow()
@@ -102,13 +103,13 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
     public void testRowNumber() {
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
-        Window window = new Window(new RowNumber(), Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.empty());
+        Window window = new Window(new RowNumber(), partitionKeyList, orderKeyList);
         Alias windowAlias = new Alias(window, window.toSql());
         List<NamedExpression> outputExpressions = Lists.newArrayList(windowAlias);
         Plan root = new LogicalWindow<>(outputExpressions, rStudent);
 
         PlanChecker.from(MemoTestUtils.createConnectContext(), root)
-                .applyTopDown(new NormalizeWindow())
+                .applyTopDown(new ExtractWindowExpression())
                 .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame())
                 .matches(
                         logicalWindow()
@@ -121,7 +122,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
 
     @Test
     public void testCheckWindowFrameBeforeFunc0() {
-        Window window = new Window(new Rank(), Optional.of(partitionKeyList), Optional.empty(), Optional.of(defaultWindowFrame));
+        Window window = new Window(new Rank(), partitionKeyList, Lists.newArrayList(), defaultWindowFrame);
         String errorMsg = "WindowFrame clause requires OrderBy clause";
 
         forCheckWindowFrameBeforeFunc(window, errorMsg);
@@ -194,7 +195,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
     }
 
     private void forCheckWindowFrameBeforeFunc(WindowFrame windowFrame, String errorMsg) {
-        Window window = new Window(new Rank(), Optional.of(partitionKeyList), Optional.of(orderKeyList), Optional.of(windowFrame));
+        Window window = new Window(new Rank(), partitionKeyList, orderKeyList, windowFrame);
         forCheckWindowFrameBeforeFunc(window, errorMsg);
     }
 
@@ -205,6 +206,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
 
         Exception exception = Assertions.assertThrows(Exception.class, () -> {
             PlanChecker.from(MemoTestUtils.createConnectContext(), root)
+                    .applyTopDown(new ExtractWindowExpression())
                     .applyTopDown(new CheckAndStandardizeWindowFunctionAndFrame());
         }, "Not throw expected exception.");
         Assertions.assertTrue(exception.getMessage().contains(errorMsg));

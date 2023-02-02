@@ -159,7 +159,8 @@ public class NereidsPlanner extends Planner {
                     return analyzedPlan;
                 }
             }
-
+            System.out.println(cascadesContext.getMemo().copyOut().treeString());
+            System.out.println("-------------------------------");
             // rule-based optimize
             rewrite();
             if (explainLevel == ExplainLevel.REWRITTEN_PLAN || explainLevel == ExplainLevel.ALL_PLAN) {
@@ -168,7 +169,8 @@ public class NereidsPlanner extends Planner {
                     return rewrittenPlan;
                 }
             }
-
+            System.out.println(cascadesContext.getMemo().copyOut().treeString());
+            System.out.println("-------------------------------");
             deriveStats();
 
             // We need to do join reorder before cascades and after deriving stats

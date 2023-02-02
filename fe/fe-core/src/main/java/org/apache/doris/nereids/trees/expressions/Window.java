@@ -18,13 +18,12 @@
 package org.apache.doris.nereids.trees.expressions;
 
 import org.apache.doris.nereids.exceptions.UnboundException;
-import org.apache.doris.nereids.properties.OrderKey;
 import org.apache.doris.nereids.trees.expressions.functions.PropagateNullable;
-import org.apache.doris.nereids.trees.expressions.shape.UnaryExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import java.util.List;
@@ -37,29 +36,46 @@ import java.util.stream.Collectors;
  * which is an UnboundFunction at first and will be analyzed as relevant BoundFunction
  * (can be a WindowFunction or AggregateFunction) after BindFunction.
  */
-public class Window extends Expression implements UnaryExpression, PropagateNullable {
+public class Window extends Expression implements PropagateNullable {
 
-    private Optional<List<Expression>> partitionKeyList;
+    private final Expression function;
 
-    private Optional<List<OrderKey>> orderKeyList;
+    private final List<Expression> partitionKeyList;
 
-    private Optional<WindowFrame> windowFrame;
+    private final List<OrderExpression> orderKeyList;
 
-    /** for test only*/
-    public Window(Expression function) {
-        this(function, Optional.empty(), Optional.empty(), Optional.empty());
+    private final Optional<WindowFrame> windowFrame;
+
+    /** constructor of Window*/
+    public Window(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList) {
+        super(new ImmutableList.Builder<Expression>()
+                .add(function)
+                .addAll(partitionKeyList)
+                .addAll(orderKeyList)
+                .build().toArray(new Expression[0]));
+        this.function = function;
+        this.partitionKeyList = ImmutableList.copyOf(partitionKeyList);
+        this.orderKeyList = ImmutableList.copyOf(orderKeyList);
+        this.windowFrame = Optional.empty();
     }
 
-    public Window(Expression function, Optional<List<Expression>> partitionKeyList,
-                  Optional<List<OrderKey>> orderKeyList, Optional<WindowFrame> windowFrame) {
-        super(function);
-        this.partitionKeyList = partitionKeyList;
-        this.orderKeyList = orderKeyList;
-        this.windowFrame = windowFrame;
+    /** constructor of Window*/
+    public Window(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList,
+                  WindowFrame windowFrame) {
+        super(new ImmutableList.Builder<Expression>()
+                .add(function)
+                .addAll(partitionKeyList)
+                .addAll(orderKeyList)
+                .add(windowFrame)
+                .build().toArray(new Expression[0]));
+        this.function = function;
+        this.partitionKeyList = ImmutableList.copyOf(partitionKeyList);
+        this.orderKeyList = ImmutableList.copyOf(orderKeyList);
+        this.windowFrame = Optional.of(Objects.requireNonNull(windowFrame));
     }
 
-    public Expression getWindowFunction() {
-        return child();
+    public Expression getFunction() {
+        return function;
     }
 
     /**
@@ -68,20 +84,19 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
      */
     public List<Expression> getExpressionsInWindowSpec() {
         List<Expression> expressions = Lists.newArrayList();
-        expressions.addAll(child().children());
-        partitionKeyList.ifPresent(list -> expressions.addAll(list));
-        orderKeyList.ifPresent(list -> expressions.addAll(list.stream()
-                .map(orderKey -> orderKey.getExpr())
-                .collect(Collectors.toList()))
-        );
+        expressions.addAll(function.children());
+        expressions.addAll(partitionKeyList);
+        expressions.addAll(orderKeyList.stream()
+                .map(orderExpression -> orderExpression.child())
+                .collect(Collectors.toList()));
         return expressions;
     }
 
-    public Optional<List<Expression>> getPartitionKeyList() {
+    public List<Expression> getPartitionKeyList() {
         return partitionKeyList;
     }
 
-    public Optional<List<OrderKey>> getOrderKeyList() {
+    public List<OrderExpression> getOrderKeyList() {
         return orderKeyList;
     }
 
@@ -90,17 +105,35 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
     }
 
     public Window withWindowFrame(WindowFrame windowFrame) {
-        return new Window(child(), partitionKeyList, orderKeyList, Optional.of(windowFrame));
+        return new Window(function, partitionKeyList, orderKeyList, windowFrame);
     }
 
-    public Window withOrderKeyList(List<OrderKey> orderKeyList) {
-        return new Window(child(), partitionKeyList, Optional.of(orderKeyList), windowFrame);
+    public Window withOrderKeyList(List<OrderExpression> orderKeyList) {
+        if (windowFrame.isPresent()) {
+            return new Window(function, partitionKeyList, orderKeyList, windowFrame.get());
+        }
+        return new Window(function, partitionKeyList, orderKeyList);
     }
 
     @Override
     public Window withChildren(List<Expression> children) {
-        Preconditions.checkArgument(children.size() == 1);
-        return new Window(children.get(0), partitionKeyList, orderKeyList, windowFrame);
+        Preconditions.checkArgument(children.size() >= 1);
+        int index = 0;
+        Expression func = children.get(index);
+        index += 1;
+
+        List<Expression> partitionKeys = children.subList(index, index + partitionKeyList.size());
+        index += partitionKeyList.size();
+
+        List<OrderExpression> orderKeys = children.subList(index, index + orderKeyList.size()).stream()
+                .map(OrderExpression.class::cast)
+                .collect(Collectors.toList());
+        index += orderKeyList.size();
+
+        if (index < children.size()) {
+            return new Window(func, partitionKeys, orderKeys, (WindowFrame) children.get(index));
+        }
+        return new Window(func, partitionKeys, orderKeys);
     }
 
     @Override
@@ -112,7 +145,7 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
             return false;
         }
         Window window = (Window) o;
-        return Objects.equals(child(), window.child())
+        return Objects.equals(function, window.function)
             && Objects.equals(partitionKeyList, window.partitionKeyList)
             && Objects.equals(orderKeyList, window.orderKeyList)
             && Objects.equals(windowFrame, window.windowFrame);
@@ -120,23 +153,23 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
 
     @Override
     public int hashCode() {
-        return Objects.hash(child(), partitionKeyList, orderKeyList, windowFrame);
+        return Objects.hash(function, partitionKeyList, orderKeyList, windowFrame);
     }
 
     @Override
     public String toSql() {
         StringBuilder sb = new StringBuilder();
-        sb.append(getWindowFunction().toSql() + " OVER(");
-        partitionKeyList.ifPresent(pkList -> sb.append("PARTITION BY ")
-                .append(pkList.stream()
-                .map(Expression::toSql)
-                .collect(Collectors.joining(", ", "", " "))));
-
-        orderKeyList.ifPresent(okList -> sb.append("ORDER BY ")
-                .append(okList.stream()
-                .map(OrderKey::toSql)
-                .collect(Collectors.joining(", ", "", " "))));
-
+        sb.append(function.toSql() + " OVER(");
+        if (!partitionKeyList.isEmpty()) {
+            sb.append("PARTITION BY ").append(partitionKeyList.stream()
+                    .map(Expression::toSql)
+                    .collect(Collectors.joining(", ", "", " ")));
+        }
+        if (!orderKeyList.isEmpty()) {
+            sb.append("ORDER BY ").append(orderKeyList.stream()
+                    .map(OrderExpression::toSql)
+                    .collect(Collectors.joining(", ", "", " ")));
+        }
         windowFrame.ifPresent(wf -> sb.append(wf.toSql()));
         sb.append(")");
         return sb.toString().trim();
@@ -145,19 +178,18 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append(getWindowFunction() + " WindowSpec(");
-
-        partitionKeyList.ifPresent(pkList -> sb.append("PARTITION BY ")
-                .append(pkList.stream()
-                .map(Expression::toString)
-                .collect(Collectors.joining(", ", "", ", "))));
-
-        orderKeyList.ifPresent(okList -> sb.append("ORDER BY ")
-                .append(okList.stream()
-                .map(OrderKey::toString)
-                .collect(Collectors.joining(", ", "", ", "))));
-
-        windowFrame.ifPresent(wf -> sb.append(wf));
+        sb.append(function + " WindowSpec(");
+        if (!partitionKeyList.isEmpty()) {
+            sb.append("PARTITION BY ").append(partitionKeyList.stream()
+                    .map(Expression::toString)
+                    .collect(Collectors.joining(", ", "", " ")));
+        }
+        if (!orderKeyList.isEmpty()) {
+            sb.append("ORDER BY ").append(orderKeyList.stream()
+                    .map(OrderExpression::toString)
+                    .collect(Collectors.joining(", ", "", " ")));
+        }
+        windowFrame.ifPresent(wf -> sb.append(wf.toSql()));
         String string = sb.toString();
         // if windowFrame is not present, maybe an unused string ", " would be in the end of stringBuilder
         string = string.endsWith(", ") ? string.substring(0, string.length() - 2) : string;
@@ -171,6 +203,6 @@ public class Window extends Expression implements UnaryExpression, PropagateNull
 
     @Override
     public DataType getDataType() throws UnboundException {
-        return child().getDataType();
+        return function.getDataType();
     }
 }
