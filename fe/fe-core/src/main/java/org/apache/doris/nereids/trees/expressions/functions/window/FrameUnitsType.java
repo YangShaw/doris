@@ -21,14 +21,6 @@ package org.apache.doris.nereids.trees.expressions.functions.window;
  * frame units types
  */
 public enum FrameUnitsType {
-
-    ROWS("ROWS"),
-    RANGE("RANGE");
-
-    private final String description;
-
-    FrameUnitsType(String description) {
-        this.description = description;
-    }
-
+    ROWS(),
+    RANGE()
 }

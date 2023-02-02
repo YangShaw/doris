@@ -148,7 +148,7 @@ import org.apache.doris.nereids.trees.expressions.Subtract;
 import org.apache.doris.nereids.trees.expressions.TVFProperties;
 import org.apache.doris.nereids.trees.expressions.TimestampArithmetic;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.Function;
 import org.apache.doris.nereids.trees.expressions.functions.agg.Count;
@@ -354,7 +354,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
                     .map(RuleContext::getText)
                     .collect(ImmutableList.toImmutableList())
             );
-            return new LogicalSubQueryAlias(ctx.identifier().getText(), columnNames, queryPlan);
+            return new LogicalSubQueryAlias<>(ctx.identifier().getText(), columnNames, queryPlan);
         });
     }
 
@@ -977,7 +977,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
     /**
      * deal with window function definition
      */
-    private Window withWindowSpec(WindowSpecContext ctx, Expression function) {
+    private WindowExpression withWindowSpec(WindowSpecContext ctx, Expression function) {
         List<Expression> partitionKeyList = Lists.newArrayList();
         if (ctx.partitionClause() != null) {
             partitionKeyList = visit(ctx.partitionClause().expression(), Expression.class);
@@ -991,9 +991,9 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
         }
 
         if (ctx.windowFrame() != null) {
-            return new Window(function, partitionKeyList, orderKeyList, withWindowFrame(ctx.windowFrame()));
+            return new WindowExpression(function, partitionKeyList, orderKeyList, withWindowFrame(ctx.windowFrame()));
         }
-        return new Window(function, partitionKeyList, orderKeyList);
+        return new WindowExpression(function, partitionKeyList, orderKeyList);
     }
 
     /**

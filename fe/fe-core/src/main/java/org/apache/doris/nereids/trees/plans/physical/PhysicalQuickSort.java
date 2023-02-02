@@ -44,7 +44,7 @@ public class PhysicalQuickSort<CHILD_TYPE extends Plan> extends AbstractPhysical
     }
 
     /**
-     * Constructor of PhysicalQuickSort.
+     * Constructor of PhysicalHashJoinNode.
      */
     public PhysicalQuickSort(List<OrderKey> orderKeys, Optional<GroupExpression> groupExpression,
                              LogicalProperties logicalProperties, CHILD_TYPE child) {
@@ -52,7 +52,7 @@ public class PhysicalQuickSort<CHILD_TYPE extends Plan> extends AbstractPhysical
     }
 
     /**
-     * Constructor of PhysicalQuickSort.
+     * Constructor of PhysicalHashJoinNode.
      */
     public PhysicalQuickSort(List<OrderKey> orderKeys, Optional<GroupExpression> groupExpression,
                              LogicalProperties logicalProperties, PhysicalProperties physicalProperties,

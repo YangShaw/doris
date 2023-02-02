@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  * which is an UnboundFunction at first and will be analyzed as relevant BoundFunction
  * (can be a WindowFunction or AggregateFunction) after BindFunction.
  */
-public class Window extends Expression implements PropagateNullable {
+public class WindowExpression extends Expression implements PropagateNullable {
 
     private final Expression function;
 
@@ -47,7 +47,7 @@ public class Window extends Expression implements PropagateNullable {
     private final Optional<WindowFrame> windowFrame;
 
     /** constructor of Window*/
-    public Window(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList) {
+    public WindowExpression(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList) {
         super(new ImmutableList.Builder<Expression>()
                 .add(function)
                 .addAll(partitionKeyList)
@@ -60,8 +60,8 @@ public class Window extends Expression implements PropagateNullable {
     }
 
     /** constructor of Window*/
-    public Window(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList,
-                  WindowFrame windowFrame) {
+    public WindowExpression(Expression function, List<Expression> partitionKeyList, List<OrderExpression> orderKeyList,
+                            WindowFrame windowFrame) {
         super(new ImmutableList.Builder<Expression>()
                 .add(function)
                 .addAll(partitionKeyList)
@@ -104,19 +104,19 @@ public class Window extends Expression implements PropagateNullable {
         return windowFrame;
     }
 
-    public Window withWindowFrame(WindowFrame windowFrame) {
-        return new Window(function, partitionKeyList, orderKeyList, windowFrame);
+    public WindowExpression withWindowFrame(WindowFrame windowFrame) {
+        return new WindowExpression(function, partitionKeyList, orderKeyList, windowFrame);
     }
 
-    public Window withOrderKeyList(List<OrderExpression> orderKeyList) {
+    public WindowExpression withOrderKeyList(List<OrderExpression> orderKeyList) {
         if (windowFrame.isPresent()) {
-            return new Window(function, partitionKeyList, orderKeyList, windowFrame.get());
+            return new WindowExpression(function, partitionKeyList, orderKeyList, windowFrame.get());
         }
-        return new Window(function, partitionKeyList, orderKeyList);
+        return new WindowExpression(function, partitionKeyList, orderKeyList);
     }
 
     @Override
-    public Window withChildren(List<Expression> children) {
+    public WindowExpression withChildren(List<Expression> children) {
         Preconditions.checkArgument(children.size() >= 1);
         int index = 0;
         Expression func = children.get(index);
@@ -131,9 +131,9 @@ public class Window extends Expression implements PropagateNullable {
         index += orderKeyList.size();
 
         if (index < children.size()) {
-            return new Window(func, partitionKeys, orderKeys, (WindowFrame) children.get(index));
+            return new WindowExpression(func, partitionKeys, orderKeys, (WindowFrame) children.get(index));
         }
-        return new Window(func, partitionKeys, orderKeys);
+        return new WindowExpression(func, partitionKeys, orderKeys);
     }
 
     @Override
@@ -144,7 +144,7 @@ public class Window extends Expression implements PropagateNullable {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        Window window = (Window) o;
+        WindowExpression window = (WindowExpression) o;
         return Objects.equals(function, window.function)
             && Objects.equals(partitionKeyList, window.partitionKeyList)
             && Objects.equals(orderKeyList, window.orderKeyList)

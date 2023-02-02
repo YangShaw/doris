@@ -23,7 +23,7 @@ import org.apache.doris.nereids.rules.analysis.WindowFunctionChecker;
 import org.apache.doris.nereids.rules.rewrite.OneRewriteRuleFactory;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
 
@@ -47,8 +47,8 @@ public class CheckAndStandardizeWindowFunctionAndFrame extends OneRewriteRuleFac
 
         List<NamedExpression> newOutputExpressions = logicalWindow.getOutputExpressions().stream()
                 .map(expr -> {
-                    if (expr.anyMatch(Window.class::isInstance)) {
-                        Window window = (Window) expr.child(0);
+                    if (expr.anyMatch(WindowExpression.class::isInstance)) {
+                        WindowExpression window = (WindowExpression) expr.child(0);
                         WindowFunctionChecker checker = new WindowFunctionChecker(window);
                         checker.checkWindowBeforeFunc();
                         checker.checkWindowFunction();

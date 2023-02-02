@@ -23,7 +23,7 @@ import org.apache.doris.nereids.rules.rewrite.OneRewriteRuleFactory;
 import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalWindow;
@@ -59,9 +59,9 @@ public class ExtractWindowExpression extends OneRewriteRuleFactory implements No
             // 2. handle window's outputs and windowExprs
             // need to replace exprs with SlotReference in WindowSpec, due to LogicalWindow.getExpressions()
             List<NamedExpression> normalizedOutputs1 = context.normalizeToUseSlotRef(outputs);
-            Set<Window> normalizedWindows = ExpressionUtils.collect(normalizedOutputs1, Window.class::isInstance);
+            Set<WindowExpression> normalizedWindows = ExpressionUtils.collect(normalizedOutputs1, WindowExpression.class::isInstance);
             Set<NamedExpression> normalizedOthers = normalizedOutputs1.stream()
-                    .filter(expr -> !expr.anyMatch(Window.class::isInstance))
+                    .filter(expr -> !expr.anyMatch(WindowExpression.class::isInstance))
                     .collect(ImmutableSet.toImmutableSet());
 
             existedAlias = ExpressionUtils.collect(normalizedOutputs1, Alias.class::isInstance);
@@ -90,8 +90,8 @@ public class ExtractWindowExpression extends OneRewriteRuleFactory implements No
         // 2. other slots of outputExpressions
         return expressions.stream()
             .flatMap(expression -> {
-                if (expression.anyMatch(Window.class::isInstance)) {
-                    return ((Window) expression.child(0)).getExpressionsInWindowSpec().stream();
+                if (expression.anyMatch(WindowExpression.class::isInstance)) {
+                    return ((WindowExpression) expression.child(0)).getExpressionsInWindowSpec().stream();
                 }
                 return ImmutableList.of(expression).stream();
             })
@@ -99,6 +99,6 @@ public class ExtractWindowExpression extends OneRewriteRuleFactory implements No
     }
 
     private boolean containsWindowExpression(List<NamedExpression> expressions) {
-        return expressions.stream().anyMatch(expr -> expr.anyMatch(Window.class::isInstance));
+        return expressions.stream().anyMatch(expr -> expr.anyMatch(WindowExpression.class::isInstance));
     }
 }

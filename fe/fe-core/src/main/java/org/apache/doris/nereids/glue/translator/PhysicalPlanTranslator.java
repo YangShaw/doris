@@ -628,9 +628,9 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // 1. translate to old optimizer variable
         // variable in Nereids
         WindowFrameGroup windowFrameGroup = physicalWindow.getWindowFrameGroup();
-        List<Expression> partitionKeyList = windowFrameGroup.getPartitionKeyList();
-        List<OrderExpression> orderKeyList = windowFrameGroup.getOrderKeyList();
-        List<NamedExpression> windowFunctionList = windowFrameGroup.getGroupList();
+        List<Expression> partitionKeyList = windowFrameGroup.getPartitionKeys();
+        List<OrderExpression> orderKeyList = windowFrameGroup.getOrderKeys();
+        List<NamedExpression> windowFunctionList = windowFrameGroup.getGroups();
 
         // partition by clause
         List<Expr> partitionExprs = partitionKeyList.stream()
@@ -672,10 +672,10 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         // generate predicates to check if the exprs of partitionKeys and orderKeys have matched isNullable between
         // sortNode and analyticNode
         Expr partitionExprsIsNullableMatched = partitionExprs.isEmpty() ? null : windowExprsHaveMatchedNullable(
-                windowFrameGroup.getPartitionKeyList(), partitionExprs, bufferedSlotRefForWindow);
+                windowFrameGroup.getPartitionKeys(), partitionExprs, bufferedSlotRefForWindow);
 
         Expr orderElementsIsNullableMatched = orderByElements.isEmpty() ? null : windowExprsHaveMatchedNullable(
-                windowFrameGroup.getOrderKeyList().stream().map(order -> order.child()).collect(Collectors.toList()),
+                windowFrameGroup.getOrderKeys().stream().map(order -> order.child()).collect(Collectors.toList()),
                 orderByElements.stream().map(order -> order.getExpr()).collect(Collectors.toList()),
                 bufferedSlotRefForWindow);
 
@@ -1899,13 +1899,13 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         Map<ExprId, SlotRef> bufferedSlotRefForWindow = context.getBufferedSlotRefForWindow();
         // will be set only once when visiting first PhysicalWindow
         if (bufferedSlotRefForWindow.isEmpty()) {
-            windowFrameGroup.getPartitionKeyList().stream()
+            windowFrameGroup.getPartitionKeys().stream()
                     .map(NamedExpression.class::cast)
                     .forEach(expression -> {
                         ExprId exprId = expression.getExprId();
                         bufferedSlotRefForWindow.put(exprId, context.findSlotRef(exprId));
                     });
-            windowFrameGroup.getOrderKeyList().stream()
+            windowFrameGroup.getOrderKeys().stream()
                     .map(ok -> ok.child())
                     .map(NamedExpression.class::cast)
                     .forEach(expression -> {

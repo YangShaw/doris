@@ -25,7 +25,8 @@ import org.apache.doris.nereids.trees.expressions.shape.UnaryExpression;
 import org.apache.doris.nereids.types.DataType;
 
 /** parent class for first_value() and last_value() */
-public class FirstOrLastValue extends WindowFunction implements UnaryExpression, PropagateNullable, CustomSignature {
+public abstract class FirstOrLastValue extends WindowFunction
+        implements UnaryExpression, PropagateNullable, CustomSignature {
 
     public FirstOrLastValue(String name, Expression child) {
         super(name, child);

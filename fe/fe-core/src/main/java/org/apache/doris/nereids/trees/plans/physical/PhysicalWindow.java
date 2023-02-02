@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.trees.plans.physical;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.properties.PhysicalProperties;
@@ -44,9 +45,9 @@ import java.util.Optional;
 public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD_TYPE> implements Window,
         RequirePropertiesSupplier<PhysicalWindow<CHILD_TYPE>> {
 
-    private List<NamedExpression> outputExpressions;
-    private WindowFrameGroup windowFrameGroup;
-    private RequireProperties requireProperties;
+    private final List<NamedExpression> outputExpressions;
+    private final WindowFrameGroup windowFrameGroup;
+    private final RequireProperties requireProperties;
 
     public PhysicalWindow(List<NamedExpression> outputExpressions,
                           WindowFrameGroup windowFrameGroup, LogicalProperties logicalProperties, CHILD_TYPE child) {
@@ -59,9 +60,12 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
                           Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
                           CHILD_TYPE child) {
         super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, child);
-        this.outputExpressions = outputExpressions;
-        this.windowFrameGroup = windowFrameGroup;
-        this.requireProperties = requireProperties;
+        this.outputExpressions = ImmutableList.copyOf(Objects.requireNonNull(outputExpressions, "output expressions"
+                + "in PhysicalWindow cannot be null"));
+        this.windowFrameGroup = Objects.requireNonNull(windowFrameGroup, "windowFrameGroup in PhysicalWindow"
+                + "cannot be null");
+        this.requireProperties = Objects.requireNonNull(requireProperties, "requireProperties in PhysicalWindow"
+                + "cannot be null");
     }
 
     /** constructor for PhysicalWindow */
@@ -72,9 +76,12 @@ public class PhysicalWindow<CHILD_TYPE extends Plan> extends PhysicalUnary<CHILD
                           CHILD_TYPE child) {
         super(PlanType.PHYSICAL_WINDOW, groupExpression, logicalProperties, physicalProperties,
                 statsDeriveResult, child);
-        this.outputExpressions = outputExpressions;
-        this.windowFrameGroup = windowFrameGroup;
-        this.requireProperties = requireProperties;
+        this.outputExpressions = ImmutableList.copyOf(Objects.requireNonNull(outputExpressions, "output expressions"
+            + "in PhysicalWindow cannot be null"));
+        this.windowFrameGroup = Objects.requireNonNull(windowFrameGroup, "windowFrameGroup in PhysicalWindow"
+            + "cannot be null");
+        this.requireProperties = Objects.requireNonNull(requireProperties, "requireProperties in PhysicalWindow"
+            + "cannot be null");
     }
 
     @Override

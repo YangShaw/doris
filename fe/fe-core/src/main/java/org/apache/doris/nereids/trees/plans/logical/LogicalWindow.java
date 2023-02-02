@@ -40,9 +40,9 @@ import java.util.Optional;
  */
 public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_TYPE> implements Window {
 
-    private List<NamedExpression> outputExpressions;
+    private final List<NamedExpression> outputExpressions;
 
-    private boolean isChecked;
+    private final boolean isChecked;
 
     /**
      * used in step Analyze
@@ -59,7 +59,8 @@ public class LogicalWindow<CHILD_TYPE extends Plan> extends LogicalUnary<CHILD_T
                          Optional<GroupExpression> groupExpression, Optional<LogicalProperties> logicalProperties,
                          CHILD_TYPE child) {
         super(PlanType.LOGICAL_WINDOW, groupExpression, logicalProperties, child);
-        this.outputExpressions = outputExpressions;
+        this.outputExpressions = ImmutableList.copyOf(Objects.requireNonNull(outputExpressions, "output expressions" +
+                "in LogicalWindow cannot be null"));
         this.isChecked = isChecked;
     }
 

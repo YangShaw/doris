@@ -22,7 +22,7 @@ import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.OrderExpression;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.window.DenseRank;
 import org.apache.doris.nereids.trees.expressions.functions.window.FrameBoundary;
@@ -81,7 +81,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
         List<WindowFunction> funcList = Lists.newArrayList(new Rank(), new DenseRank());
 
         for (WindowFunction func : funcList) {
-            Window window = new Window(func, partitionKeyList, orderKeyList);
+            WindowExpression window = new WindowExpression(func, partitionKeyList, orderKeyList);
             Alias windowAlias = new Alias(window, window.toSql());
             List<NamedExpression> outputExpressions = Lists.newArrayList(windowAlias);
             Plan root = new LogicalProject<>(outputExpressions, rStudent);
@@ -92,7 +92,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
                     .matches(
                             logicalWindow()
                                     .when(logicalWindow -> {
-                                        Window newWindow = (Window) logicalWindow.getOutputExpressions().get(0).child(0);
+                                        WindowExpression newWindow = (WindowExpression) logicalWindow.getOutputExpressions().get(0).child(0);
                                         return newWindow.getWindowFrame().get().equals(requiredFrame);
                                     })
                     );
@@ -103,7 +103,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
     public void testRowNumber() {
         WindowFrame requiredFrame = new WindowFrame(FrameUnitsType.ROWS,
                 FrameBoundary.newPrecedingBoundary(), FrameBoundary.newCurrentRowBoundary());
-        Window window = new Window(new RowNumber(), partitionKeyList, orderKeyList);
+        WindowExpression window = new WindowExpression(new RowNumber(), partitionKeyList, orderKeyList);
         Alias windowAlias = new Alias(window, window.toSql());
         List<NamedExpression> outputExpressions = Lists.newArrayList(windowAlias);
         Plan root = new LogicalWindow<>(outputExpressions, rStudent);
@@ -114,7 +114,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
                 .matches(
                         logicalWindow()
                                 .when(logicalWindow -> {
-                                    Window newWindow = (Window) logicalWindow.getOutputExpressions().get(0).child(0);
+                                    WindowExpression newWindow = (WindowExpression) logicalWindow.getOutputExpressions().get(0).child(0);
                                     return newWindow.getWindowFrame().get().equals(requiredFrame);
                                 })
                 );
@@ -122,7 +122,7 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
 
     @Test
     public void testCheckWindowFrameBeforeFunc0() {
-        Window window = new Window(new Rank(), partitionKeyList, Lists.newArrayList(), defaultWindowFrame);
+        WindowExpression window = new WindowExpression(new Rank(), partitionKeyList, Lists.newArrayList(), defaultWindowFrame);
         String errorMsg = "WindowFrame clause requires OrderBy clause";
 
         forCheckWindowFrameBeforeFunc(window, errorMsg);
@@ -195,11 +195,11 @@ public class CheckAndStandardizeWindowFunctionTest implements PatternMatchSuppor
     }
 
     private void forCheckWindowFrameBeforeFunc(WindowFrame windowFrame, String errorMsg) {
-        Window window = new Window(new Rank(), partitionKeyList, orderKeyList, windowFrame);
+        WindowExpression window = new WindowExpression(new Rank(), partitionKeyList, orderKeyList, windowFrame);
         forCheckWindowFrameBeforeFunc(window, errorMsg);
     }
 
-    private void forCheckWindowFrameBeforeFunc(Window window, String errorMsg) {
+    private void forCheckWindowFrameBeforeFunc(WindowExpression window, String errorMsg) {
         Alias windowAlias = new Alias(window, window.toSql());
         List<NamedExpression> outputExpressions = Lists.newArrayList(windowAlias);
         Plan root = new LogicalWindow<>(outputExpressions, rStudent);

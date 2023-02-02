@@ -73,7 +73,7 @@ import org.apache.doris.nereids.trees.expressions.UnaryOperator;
 import org.apache.doris.nereids.trees.expressions.VariableDesc;
 import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.expressions.functions.BoundFunction;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
@@ -420,8 +420,8 @@ public abstract class ExpressionVisitor<R, C>
         return visit(orderExpression, context);
     }
 
-    public R visitWindow(Window window, C context) {
-        return visit(window, context);
+    public R visitWindow(WindowExpression windowExpression, C context) {
+        return visit(windowExpression, context);
     }
 
     public R visitWindowFrame(WindowFrame windowFrame, C context) {

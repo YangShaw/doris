@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.ExplicitlyCastableSignature;
@@ -27,6 +28,7 @@ import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
 import org.apache.doris.nereids.types.DataType;
 
 import com.google.common.base.Preconditions;
+import org.apache.doris.nereids.types.IntegerType;
 
 import java.util.List;
 
@@ -59,10 +61,6 @@ public class Lead extends WindowFunction implements TernaryExpression, Propagate
         return child(2);
     }
 
-    public void setDefaultValue(Expression defaultValue) {
-        this.children.set(2, defaultValue);
-    }
-
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitLead(this, context);
@@ -70,12 +68,8 @@ public class Lead extends WindowFunction implements TernaryExpression, Propagate
 
     @Override
     public List<FunctionSignature> getSignatures() {
-        return null;
-    }
-
-    @Override
-    public FunctionSignature searchSignature(List<FunctionSignature> signatures) {
-        return null;
+        return ImmutableList.of(FunctionSignature.ret(getArgument(0).getDataType())
+            .args(getArgument(0).getDataType(), IntegerType.INSTANCE, getArgument(0).getDataType()));
     }
 
     @Override

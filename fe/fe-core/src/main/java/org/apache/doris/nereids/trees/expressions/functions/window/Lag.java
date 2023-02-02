@@ -59,10 +59,6 @@ public class Lag extends WindowFunction implements TernaryExpression, PropagateN
         return child(2);
     }
 
-    public void setDefaultValue(Expression defaultValue) {
-        this.children.set(2, defaultValue);
-    }
-
     @Override
     public Lag withChildren(List<Expression> children) {
         Preconditions.checkArgument(children.size() >= 1 && children.size() <= 3);

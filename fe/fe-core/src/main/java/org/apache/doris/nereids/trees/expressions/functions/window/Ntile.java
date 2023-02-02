@@ -17,18 +17,22 @@
 
 package org.apache.doris.nereids.trees.expressions.functions.window;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
 import org.apache.doris.nereids.trees.expressions.shape.LeafExpression;
 import org.apache.doris.nereids.trees.expressions.visitor.ExpressionVisitor;
+import org.apache.doris.nereids.types.BigIntType;
 import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.types.IntegerType;
+
+import java.util.List;
 
 /**
  * window function: Ntile()
  */
-public class Ntile extends WindowFunction implements LeafExpression, AlwaysNotNullable, CustomSignature {
+public class Ntile extends WindowFunction implements LeafExpression, AlwaysNotNullable {
 
     private int buckets;
 
@@ -42,9 +46,15 @@ public class Ntile extends WindowFunction implements LeafExpression, AlwaysNotNu
     }
 
     @Override
-    public FunctionSignature customSignature() {
-        return FunctionSignature.ret(IntegerType.INSTANCE).args(IntegerType.INSTANCE);
+    public List<FunctionSignature> getSignatures() {
+        return ImmutableList.of(FunctionSignature.ret(BigIntType.INSTANCE).args(IntegerType.INSTANCE));
     }
+
+    @Override
+    public FunctionSignature searchSignature(List<FunctionSignature> signatures) {
+        return signatures.get(0);
+    }
+
 
     @Override
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {

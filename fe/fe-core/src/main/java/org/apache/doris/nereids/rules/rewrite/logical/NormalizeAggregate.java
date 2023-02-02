@@ -25,7 +25,7 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.OrderExpression;
 import org.apache.doris.nereids.trees.expressions.Slot;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunction;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
@@ -147,7 +147,7 @@ public class NormalizeAggregate extends OneRewriteRuleFactory implements Normali
 
     private Set<AggregateFunction> collectNonWindowedAggregateFunctions(List<NamedExpression> expressions) {
         List<Expression> expressionsWithoutWindow = expressions.stream()
-                .filter(expr -> !expr.anyMatch(Window.class::isInstance))
+                .filter(expr -> !expr.anyMatch(WindowExpression.class::isInstance))
                 .collect(Collectors.toList());
 
         return ExpressionUtils.collect(

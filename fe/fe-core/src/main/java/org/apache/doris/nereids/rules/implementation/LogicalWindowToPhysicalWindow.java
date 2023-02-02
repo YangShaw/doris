@@ -31,7 +31,7 @@ import org.apache.doris.nereids.rules.rewrite.logical.ExtractWindowExpression;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.OrderExpression;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.expressions.WindowFrame;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.Plan;
@@ -68,18 +68,18 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
 
         return RuleType.LOGICAL_WINDOW_TO_PHYSICAL_WINDOW_RULE.build(
             logicalWindow().when(LogicalWindow::isChecked)
-                .thenApply(ctx -> resolveWindow(ctx.cascadesContext, ctx.root))
+                .thenApply(ctx -> implement(ctx.cascadesContext, ctx.root))
         );
     }
 
     /**
      *  main procedure
      */
-    private PhysicalWindow resolveWindow(CascadesContext ctx, LogicalWindow<GroupPlan> logicalWindow) {
+    private PhysicalWindow implement(CascadesContext ctx, LogicalWindow<GroupPlan> logicalWindow) {
         // todo: remove windowExpressions from LogicalWindow and rule ExtractWindowExpressions.
         //  Only add this variable in PhysicalWindow
         List<NamedExpression> windowList = logicalWindow.getOutputExpressions().stream()
-                .filter(expr -> expr.anyMatch(Window.class::isInstance))
+                .filter(expr -> expr.anyMatch(WindowExpression.class::isInstance))
                 .collect(Collectors.toList());
 
         /////////// create three kinds of groups and compute tupleSize of each
@@ -100,7 +100,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         // eliminate LogicalWindow, and replaced it with new LogicalWindow and LogicalSort
         Plan newRoot = logicalWindow.child();
         for (PartitionKeyGroup partitionKeyGroup : partitionKeyGroupList) {
-            for (OrderKeyGroup orderKeyGroup : partitionKeyGroup.groupList) {
+            for (OrderKeyGroup orderKeyGroup : partitionKeyGroup.groups) {
                 // create LogicalSort for each OrderKeyGroup;
                 // in OrderKeyGroup, create LogicalWindow for each WindowFrameGroup
                 newRoot = createLogicalPlanNodeForWindowFunctions(newRoot, orderKeyGroup, logicalWindow, ctx);
@@ -124,7 +124,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         List<OrderKey> requiredOrderKeys = generateKeysNeedToBeSorted(orderKeyGroup);
 
         // PhysicalWindow nodes for each different window frame, so at least one PhysicalWindow node will be added
-        for (WindowFrameGroup windowFrameGroup : orderKeyGroup.groupList) {
+        for (WindowFrameGroup windowFrameGroup : orderKeyGroup.groups) {
             newRoot = createPhysicalWindow(newRoot, windowFrameGroup, logicalWindow, requiredOrderKeys);
         }
 
@@ -136,16 +136,16 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         List<OrderKey> keysNeedToBeSortedList = Lists.newArrayList();
 
         // used as SortNode.isAnalyticSort, but it is unnecessary to add it in LogicalSort
-        if (!orderKeyGroup.partitionKeyList.isEmpty()) {
-            keysNeedToBeSortedList.addAll(orderKeyGroup.partitionKeyList.stream().map(partitionKey -> {
+        if (!orderKeyGroup.partitionKeys.isEmpty()) {
+            keysNeedToBeSortedList.addAll(orderKeyGroup.partitionKeys.stream().map(partitionKey -> {
                 // todo: haven't support isNullFirst, and its default value is false(see AnalyticPlanner#line403,
                 //  but in LogicalPlanBuilder, its default value is true)
                 return new OrderKey(partitionKey, true, false);
             }).collect(Collectors.toList()));
         }
 
-        if (!orderKeyGroup.orderKeyList.isEmpty()) {
-            keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeyList.stream()
+        if (!orderKeyGroup.orderKeys.isEmpty()) {
+            keysNeedToBeSortedList.addAll(orderKeyGroup.orderKeys.stream()
                     .map(orderExpression -> orderExpression.getOrderKey())
                     .collect(Collectors.toList())
             );
@@ -153,29 +153,29 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         return keysNeedToBeSortedList;
     }
 
-    private PhysicalWindow createPhysicalWindow(Plan root, WindowFrameGroup windowFrameGroup,
-                                                LogicalWindow logicalWindow, List<OrderKey> requiredOrderKeys) {
+    private PhysicalWindow<Plan> createPhysicalWindow(Plan root, WindowFrameGroup windowFrameGroup,
+                                                LogicalWindow<Plan> logicalWindow, List<OrderKey> requiredOrderKeys) {
         // todo: partitionByEq and orderByEq?
         // requiredProperties:
         // Distribution: partitionKeys
         // Order: requiredOrderKeys
-        PhysicalWindow physicalWindow = new PhysicalWindow<>(
+        PhysicalWindow<Plan> physicalWindow = new PhysicalWindow<>(
                 logicalWindow.getOutputExpressions(),
                 windowFrameGroup,
                 logicalWindow.getLogicalProperties(),
                 root);
         // todo: add isAnalyticSort to physicalWindow
-        if (windowFrameGroup.partitionKeyList.isEmpty() && requiredOrderKeys.isEmpty()) {
+        if (windowFrameGroup.partitionKeys.isEmpty() && requiredOrderKeys.isEmpty()) {
             return physicalWindow.withRequirePropertiesAndChild(RequireProperties.followParent(), root);
         }
 
         PhysicalProperties properties;
-        if (windowFrameGroup.partitionKeyList.isEmpty()) {
+        if (windowFrameGroup.partitionKeys.isEmpty()) {
             properties = new PhysicalProperties(new OrderSpec(requiredOrderKeys));
         } else {
             // todo: add new ShuffleType for window, like ShuffleType.WINDOW
             properties = PhysicalProperties.createHash(
-                windowFrameGroup.partitionKeyList, DistributionSpecHash.ShuffleType.ENFORCED);
+                windowFrameGroup.partitionKeys, DistributionSpecHash.ShuffleType.ENFORCED);
             // requiredOrderKeys contain partitionKeys, so there is no need to check if requiredOrderKeys.isEmpty()
             properties = properties.withOrderSpec(new OrderSpec(requiredOrderKeys));
         }
@@ -197,7 +197,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             boolean matched = false;
             for (WindowFrameGroup windowFrameGroup : windowFrameGroupList) {
                 if (windowFrameGroup.isCompatible(windowAlias)) {
-                    windowFrameGroup.addGroupMember(windowAlias);
+                    windowFrameGroup.addGroup(windowAlias);
                     matched = true;
                     break;
                 }
@@ -208,7 +208,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         }
 
         for (WindowFrameGroup wfg : windowFrameGroupList) {
-            wfg.setTupleSize(wfg.groupList.stream().mapToInt(window -> window.child(0).getDataType().width()).sum());
+            wfg.setTupleSize(wfg.groups.stream().mapToInt(window -> window.child(0).getDataType().width()).sum());
         }
 
         return windowFrameGroupList;
@@ -221,7 +221,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             boolean matched = false;
             for (OrderKeyGroup orderKeyGroup : orderKeyGroupList) {
                 if (orderKeyGroup.isCompatible(windowFrameGroup)) {
-                    orderKeyGroup.addGroupMember(windowFrameGroup);
+                    orderKeyGroup.addGroup(windowFrameGroup);
                     matched = true;
                     break;
                 }
@@ -232,7 +232,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         }
 
         for (OrderKeyGroup okg : orderKeyGroupList) {
-            okg.setTupleSize(okg.getGroupList().stream().mapToInt(WindowFrameGroup::getTupleSize).sum());
+            okg.setTupleSize(okg.getGroups().stream().mapToInt(WindowFrameGroup::getTupleSize).sum());
         }
 
         return orderKeyGroupList;
@@ -245,7 +245,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             boolean matched = false;
             for (PartitionKeyGroup partitionKeyGroup : partitionKeyGroupList) {
                 if (partitionKeyGroup.isCompatible(orderKeyGroup)) {
-                    partitionKeyGroup.addGroupMember(orderKeyGroup);
+                    partitionKeyGroup.addGroup(orderKeyGroup);
                     matched = true;
                     break;
                 }
@@ -256,7 +256,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         }
 
         for (PartitionKeyGroup pkg : partitionKeyGroupList) {
-            pkg.setTupleSize(pkg.getGroupList().stream().mapToInt(OrderKeyGroup::getTupleSize).sum());
+            pkg.setTupleSize(pkg.getGroups().stream().mapToInt(OrderKeyGroup::getTupleSize).sum());
         }
 
         return partitionKeyGroupList;
@@ -320,15 +320,11 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         PartitionKeyGroup noPartition = null;
         // after createCommonPartitionKeyGroups(), there will be at most one empty partition.
         for (PartitionKeyGroup pkg : partitionKeyGroupList) {
-            if (pkg.partitionKeyList.isEmpty()) {
+            if (pkg.partitionKeys.isEmpty()) {
                 noPartition = pkg;
                 partitionKeyGroupList.remove(noPartition);
                 break;
             }
-        }
-
-        if (noPartition != null) {
-            partitionKeyGroupList.remove(noPartition);
         }
 
         partitionKeyGroupList.sort((pkg1, pkg2) ->
@@ -340,7 +336,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         }
 
         for (PartitionKeyGroup pkg : partitionKeyGroupList) {
-            sortOrderKeyGroups(pkg.getGroupList());
+            sortOrderKeyGroups(pkg.getGroups());
         }
 
     }
@@ -351,7 +347,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         );
 
         for (OrderKeyGroup okg : orderKeyGroupList) {
-            sortWindowFrameGroups(okg.getGroupList());
+            sortWindowFrameGroups(okg.getGroups());
         }
     }
 
@@ -366,28 +362,28 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
      */
     public static class WindowFrameGroup extends WindowFunctionRelatedGroup<NamedExpression> {
 
-        private final List<Expression> partitionKeyList;
-        private final List<OrderExpression> orderKeyList;
+        private final List<Expression> partitionKeys;
+        private final List<OrderExpression> orderKeys;
         private final WindowFrame windowFrame;
 
         public WindowFrameGroup(NamedExpression windowAlias) {
-            Window window = (Window) (windowAlias.child(0));
-            partitionKeyList = window.getPartitionKeyList();
-            orderKeyList = window.getOrderKeyList();
+            WindowExpression window = (WindowExpression) (windowAlias.child(0));
+            partitionKeys = window.getPartitionKeyList();
+            orderKeys = window.getOrderKeyList();
             windowFrame = window.getWindowFrame().get();
-            groupList.add(windowAlias);
+            groups.add(windowAlias);
         }
 
         @Override
-        public void addGroupMember(NamedExpression windowAlias) {
-            groupList.add(windowAlias);
+        public void addGroup(NamedExpression windowAlias) {
+            groups.add(windowAlias);
         }
 
         @Override
         public boolean isCompatible(NamedExpression windowAlias) {
             // The comparison of PartitionKey is irrelevant to key's order,
             // but not in OrderKey' comparison.
-            Window window = (Window) (windowAlias.child(0));
+            WindowExpression window = (WindowExpression) (windowAlias.child(0));
 
             List<Expression> otherPartitionKeyList = window.getPartitionKeyList();
             List<OrderExpression> otherOrderKeyList = window.getOrderKeyList();
@@ -396,8 +392,8 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             // for PartitionKeys, we don't care about the order of each key, so we use isEqualCollection() to compare
             // whether these two lists have same keys; but for OrderKeys, the order of each key also make sense, so
             // we use equals() to compare both the elements and their order in these two lists.
-            if (CollectionUtils.isEqualCollection(partitionKeyList, otherPartitionKeyList)
-                    && orderKeyList.equals(otherOrderKeyList)) {
+            if (CollectionUtils.isEqualCollection(partitionKeys, otherPartitionKeyList)
+                    && orderKeys.equals(otherOrderKeyList)) {
                 // CollectionUtils.isEqualCollection() is absolutely equals to Expr.equalSets()
                 if ((windowFrame == null && otherWindowFrame == null) || windowFrame.equals(otherWindowFrame)) {
                     return true;
@@ -409,11 +405,11 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
         @Override
         public String toString() {
             StringBuilder sb = new StringBuilder();
-            sb.append("PartitionKeys: ").append(partitionKeyList.stream()
+            sb.append("PartitionKeys: ").append(partitionKeys.stream()
                     .map(Expression::toString)
                     .collect(Collectors.joining(", ", "", ", ")));
 
-            sb.append("OrderKeys: ").append(orderKeyList.stream()
+            sb.append("OrderKeys: ").append(orderKeys.stream()
                     .map(OrderExpression::toString)
                     .collect(Collectors.joining(", ", "", ", ")));
 
@@ -421,12 +417,12 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
             return sb.toString();
         }
 
-        public List<Expression> getPartitionKeyList() {
-            return partitionKeyList;
+        public List<Expression> getPartitionKeys() {
+            return partitionKeys;
         }
 
-        public List<OrderExpression> getOrderKeyList() {
-            return orderKeyList;
+        public List<OrderExpression> getOrderKeys() {
+            return orderKeys;
         }
 
         public WindowFrame getWindowFrame() {
@@ -440,19 +436,19 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
      */
     private static class OrderKeyGroup extends WindowFunctionRelatedGroup<WindowFrameGroup> {
 
-        private final List<Expression> partitionKeyList;
-        private final List<OrderExpression> orderKeyList;
+        private final List<Expression> partitionKeys;
+        private final List<OrderExpression> orderKeys;
 
         public OrderKeyGroup(WindowFrameGroup windowFrameGroup) {
-            partitionKeyList = windowFrameGroup.partitionKeyList;
-            orderKeyList = windowFrameGroup.orderKeyList;
-            groupList.add(windowFrameGroup);
+            partitionKeys = windowFrameGroup.partitionKeys;
+            orderKeys = windowFrameGroup.orderKeys;
+            groups.add(windowFrameGroup);
         }
 
         @Override
         public boolean isCompatible(WindowFrameGroup windowFrameGroup) {
-            return CollectionUtils.isEqualCollection(partitionKeyList, windowFrameGroup.partitionKeyList)
-                && orderKeyList.equals(windowFrameGroup.orderKeyList);
+            return CollectionUtils.isEqualCollection(partitionKeys, windowFrameGroup.partitionKeys)
+                && orderKeys.equals(windowFrameGroup.orderKeys);
         }
 
         /**
@@ -460,15 +456,15 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
          *  e.g. (a, b) is a prefix of (a, b, c), but is NOT a prefix of (b, a, c) or (b, c)
          */
         public boolean isPrefixOf(OrderKeyGroup otherOkg) {
-            if (orderKeyList.size() > otherOkg.orderKeyList.size()) {
+            if (orderKeys.size() > otherOkg.orderKeys.size()) {
                 return false;
             }
-            if (!CollectionUtils.isEqualCollection(partitionKeyList, otherOkg.partitionKeyList)) {
+            if (!CollectionUtils.isEqualCollection(partitionKeys, otherOkg.partitionKeys)) {
                 return false;
             }
 
-            for (int i = 0; i < orderKeyList.size(); i++) {
-                if (!orderKeyList.get(i).equals(otherOkg.orderKeyList.get(i))) {
+            for (int i = 0; i < orderKeys.size(); i++) {
+                if (!orderKeys.get(i).equals(otherOkg.orderKeys.get(i))) {
                     return false;
                 }
             }
@@ -479,7 +475,7 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
          * add all of otherOkg's WindowFrameGroups to this groupList
          */
         public void absorb(OrderKeyGroup otherOkg) {
-            groupList.addAll(otherOkg.groupList);
+            groups.addAll(otherOkg.groups);
         }
 
     }
@@ -488,16 +484,16 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
      * Window Functions that have common PartitionKeys.
      */
     private static class PartitionKeyGroup extends WindowFunctionRelatedGroup<OrderKeyGroup> {
-        public List<Expression> partitionKeyList;
+        public List<Expression> partitionKeys;
 
         public PartitionKeyGroup(OrderKeyGroup orderKeyGroup) {
-            partitionKeyList = orderKeyGroup.partitionKeyList;
-            groupList.add(orderKeyGroup);
+            partitionKeys = orderKeyGroup.partitionKeys;
+            groups.add(orderKeyGroup);
         }
 
         @Override
         public boolean isCompatible(OrderKeyGroup orderKeyGroup) {
-            return CollectionUtils.isEqualCollection(partitionKeyList, orderKeyGroup.partitionKeyList);
+            return CollectionUtils.isEqualCollection(partitionKeys, orderKeyGroup.partitionKeys);
         }
 
         /**
@@ -506,28 +502,27 @@ public class LogicalWindowToPhysicalWindow extends OneImplementationRuleFactory 
          * - groupList(orderKeyGroup) will be the union of this two group
          */
         public void absorb(PartitionKeyGroup otherPkg) {
-            List<Expression> intersectPartitionKeys = partitionKeyList.stream()
-                    .filter(expression -> otherPkg.partitionKeyList.contains(expression))
+            partitionKeys = partitionKeys.stream()
+                    .filter(expression -> otherPkg.partitionKeys.contains(expression))
                     .collect(Collectors.toList());
-            partitionKeyList = intersectPartitionKeys;
-            groupList.addAll(otherPkg.groupList);
+            groups.addAll(otherPkg.groups);
         }
     }
 
     private abstract static class WindowFunctionRelatedGroup<G> {
 
-        protected List<G> groupList = Lists.newArrayList();
+        protected List<G> groups = Lists.newArrayList();
 
         protected int tupleSize;
 
         public abstract boolean isCompatible(G group);
 
-        public void addGroupMember(G group) {
-            groupList.add(group);
+        public void addGroup(G group) {
+            groups.add(group);
         }
 
-        public List<G> getGroupList() {
-            return groupList;
+        public List<G> getGroups() {
+            return groups;
         }
 
         public int getTupleSize() {

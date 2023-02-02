@@ -626,9 +626,8 @@ public class StatsCalculator extends DefaultPlanVisitor<StatsDeriveResult, Void>
 
     private StatsDeriveResult computeWindow(Window windowOperator) {
         StatsDeriveResult stats = groupExpression.childStatistics(0);
-        Map<Id, ColumnStatistic> columnStatisticMap = new HashMap<>();
         Map<Id, ColumnStatistic> childColumnStats = stats.getSlotIdToColumnStats();
-        windowOperator.getOutputExpressions().stream()
+        Map<Id, ColumnStatistic> columnStatisticMap = windowOperator.getOutputExpressions().stream()
             .map(expr -> {
                 ColumnStatistic value = null;
                 Set<Slot> slots = expr.getInputSlots();
@@ -642,10 +641,7 @@ public class StatsCalculator extends DefaultPlanVisitor<StatsDeriveResult, Void>
                         }
                     }
                     if (value == null) {
-                        // process window expression
                         // todo: how to set stats?
-                        // ColumnStatisticBuilder builder = new ColumnStatisticBuilder().setNdv(1)
-                        //         .setDataSize(expr.getDataType().width());
                         value = ColumnStatistic.DEFAULT;
                     }
                 }

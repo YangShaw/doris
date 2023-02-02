@@ -24,7 +24,7 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.OrderExpression;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
-import org.apache.doris.nereids.trees.expressions.Window;
+import org.apache.doris.nereids.trees.expressions.WindowExpression;
 import org.apache.doris.nereids.trees.expressions.functions.window.Rank;
 import org.apache.doris.nereids.trees.expressions.literal.IntegerLiteral;
 import org.apache.doris.nereids.trees.plans.Plan;
@@ -64,7 +64,7 @@ public class NormalizeWindowTest implements PatternMatchSupported {
         List<Expression> partitionKeyList = ImmutableList.of(gender);
         List<OrderExpression> orderKeyList = ImmutableList.of(new OrderExpression(
                 new OrderKey(age, true, true)));
-        Window window = new Window(new Rank(), partitionKeyList, orderKeyList);
+        WindowExpression window = new WindowExpression(new Rank(), partitionKeyList, orderKeyList);
         Alias windowAlias = new Alias(window, window.toSql());
 
         List<NamedExpression> outputExpressions = Lists.newArrayList(id, windowAlias);
@@ -115,7 +115,7 @@ public class NormalizeWindowTest implements PatternMatchSupported {
         List<Expression> partitionKeyList = ImmutableList.of(new Add(id, new IntegerLiteral(2)));
         List<OrderExpression> orderKeyList = ImmutableList.of(new OrderExpression(
                 new OrderKey(new Add(age, new IntegerLiteral(2)), true, true)));
-        Window window = new Window(new Rank(), partitionKeyList, orderKeyList);
+        WindowExpression window = new WindowExpression(new Rank(), partitionKeyList, orderKeyList);
         Alias windowAlias = new Alias(window, window.toSql());
 
         List<NamedExpression> outputExpressions = Lists.newArrayList(id, windowAlias);
@@ -138,7 +138,7 @@ public class NormalizeWindowTest implements PatternMatchSupported {
                                         })
                                 ).when(logicalWindow -> {
                                     List<NamedExpression> outputs = logicalWindow.getOutputExpressions();
-                                    Window newWindow = (Window) outputs.get(1).child(0);
+                                    WindowExpression newWindow = (WindowExpression) outputs.get(1).child(0);
                                     Expression pk = newWindow.getPartitionKeyList().get(0);
                                     OrderExpression ok = newWindow.getOrderKeyList().get(0);
                                     return !newWindow.equals(windowAlias.child(0))
